@@ -1,0 +1,4 @@
+yt-dlp>=2025.1.1
+playwright>=1.40.0
+# 打包用（可选）：
+# pyinstaller>=6.0

@@ -1,0 +1,36 @@
+# ===== 敏感凭证：绝对不要上传！=====
+all_cookies.txt
+cookies*.txt
+*cookie*.txt
+ChromeCookieBackup/
+EdgeCookieBackup/
+
+# ===== 下载内容 =====
+Downloads/
+*.mp4
+*.mp3
+*.m4a
+*.webm
+downloaded_archive*.txt
+
+# ===== 构建产物 =====
+build/
+dist/
+*.exe
+*.spec
+__pycache__/
+*.pyc
+
+# ===== 调试 / 临时文件 =====
+*.png
+playlist_test.json
+out.txt
+err.txt
+debug_*.py
+*_debug*.py
+export_*.py
+get_*.py
+test_*.py
+douyin_favorites.py
+
+# 注：免安装 EXE 不放进 git 历史，改作为 GitHub Release 资源上传
