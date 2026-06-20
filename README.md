@@ -56,7 +56,7 @@
 
 ### A. 图形界面(推荐)
 
-1. 双击 `视频下载器.exe`
+1. 双击 `VidFetch.exe`
 2. **视频链接**:粘贴链接(支持「粘贴」按钮,自动清除换行)
 3. **清晰度**:下拉选择;右侧数字是**批量下载时的并发数**(1~5)
 4. **保存目录**:选择下载位置
@@ -122,7 +122,7 @@ downloader.py                   命令行下载器(B站/抖音单个/合集)
 douyin_user_playwright.py       抖音博主全部作品下载(Playwright)
 douyin_favorites_playwright.py  抖音收藏夹下载(Playwright)
 requirements.txt                Python 依赖
-dist/视频下载器.exe              打包好的免安装程序
+dist/VidFetch.exe              打包好的免安装程序
 ```
 
 ---
@@ -130,10 +130,10 @@ dist/视频下载器.exe              打包好的免安装程序
 ## 七、自行打包 EXE
 
 ```bash
-pyinstaller --onefile --windowed --name "视频下载器" ^
+pyinstaller --onefile --windowed --name "VidFetch" ^
   --collect-all yt_dlp --collect-all playwright --noconfirm gui.py
 ```
-产物在 `dist/视频下载器.exe`。
+产物在 `dist/VidFetch.exe`。
 
 ---
 
