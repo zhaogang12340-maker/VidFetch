@@ -18,6 +18,20 @@ DOUYIN_HEADERS = {
     "Referer": "https://www.douyin.com/",
 }
 
+# 浏览器扩展导出的 Cookie 文件默认就叫 cookies.txt，这里按常见命名自动识别，无需改名
+COOKIE_CANDIDATES = ["cookies.txt", "all_cookies.txt", "cookies_douyin.txt"]
+
+
+def resolve_cookie_file(path: str) -> str:
+    """指定文件存在就用它；否则在当前目录按常见命名自动查找。"""
+    if path and os.path.exists(path):
+        return path
+    for name in COOKIE_CANDIDATES:
+        if os.path.exists(name):
+            return name
+    return path
+
+
 QUALITY_PRESETS = {
     "best":   {"format": "bestvideo+bestaudio/best",                                      "label": "最高画质", "suffix": "_最高画质"},
     "4k":     {"format": "bestvideo[height<=2160]+bestaudio/best[height<=2160]/bestvideo+bestaudio/best", "label": "4K",      "suffix": "_4K"},
@@ -179,8 +193,8 @@ async def main_async(args):
 def main():
     parser = argparse.ArgumentParser(description="下载抖音博主所有作品（Playwright 版）")
     parser.add_argument("--url", required=True, help="博主主页 URL（douyin.com/user/...）")
-    parser.add_argument("--cookies", default="all_cookies.txt",
-                        help="Cookie 文件路径（默认：当前目录下 all_cookies.txt）")
+    parser.add_argument("--cookies", default="cookies.txt",
+                        help="Cookie 文件路径（默认自动识别当前目录下的 cookies.txt 等）")
     parser.add_argument("-o", "--output",
                         default=os.path.join(os.path.expanduser("~"), "Videos", "抖音用户视频"),
                         help="下载目录（默认：用户主目录下 Videos/抖音用户视频）")
@@ -188,6 +202,7 @@ def main():
                         choices=list(QUALITY_PRESETS.keys()),
                         help="best/4k/1080p/720p/low/audio（默认: best）")
     args = parser.parse_args()
+    args.cookies = resolve_cookie_file(args.cookies)
     asyncio.run(main_async(args))
 
 

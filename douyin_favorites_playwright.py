@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 用 Playwright 打开抖音收藏夹页面，拦截 API 响应获取全部视频 ID，再用 yt-dlp 下载。
-用法: python douyin_favorites_playwright.py --sec-uid YOUR_SEC_UID --cookies cookies_douyin.txt -o ./收藏夹
+用法: python douyin_favorites_playwright.py --sec-uid YOUR_SEC_UID -o ./收藏夹
+      （Cookie 默认自动识别当前目录下的 cookies.txt，无需 --cookies / 改名）
 """
 import sys, io, os, time, json, argparse, http.cookiejar, asyncio
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -17,6 +18,19 @@ DOUYIN_HEADERS = {
 }
 
 # 你的抖音 sec_uid（从收藏夹页面 URL 中获取），通过 --sec-uid 传入
+
+# 浏览器扩展导出的 Cookie 文件默认就叫 cookies.txt，这里按常见命名自动识别，无需改名
+COOKIE_CANDIDATES = ["cookies.txt", "cookies_douyin.txt", "all_cookies.txt"]
+
+
+def resolve_cookie_file(path: str) -> str:
+    """指定文件存在就用它；否则在当前目录按常见命名自动查找。"""
+    if path and os.path.exists(path):
+        return path
+    for name in COOKIE_CANDIDATES:
+        if os.path.exists(name):
+            return name
+    return path
 
 
 def load_cookies_for_playwright(cookie_file: str) -> list:
@@ -231,8 +245,8 @@ def main():
     )
     parser.add_argument("--sec-uid", required=True,
                         help="抖音用户 sec_uid（从收藏夹页面 URL 中获取）")
-    parser.add_argument("--cookies", default="cookies_douyin.txt",
-                        help="Cookie 文件路径（默认：当前目录下 cookies_douyin.txt）")
+    parser.add_argument("--cookies", default="cookies.txt",
+                        help="Cookie 文件路径（默认自动识别当前目录下的 cookies.txt 等）")
     parser.add_argument("-o", "--output",
                         default=os.path.join(os.path.expanduser("~"), "Videos", "抖音收藏夹"),
                         help="下载目录（默认：用户主目录下 Videos/抖音收藏夹）")
@@ -240,6 +254,7 @@ def main():
                         choices=["best", "medium", "low", "audio"],
                         help="清晰度: best/medium/low/audio（默认: best）")
     args = parser.parse_args()
+    args.cookies = resolve_cookie_file(args.cookies)
     asyncio.run(main_async(args))
 
 
