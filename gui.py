@@ -26,7 +26,7 @@ except Exception:
         pass
 
 # ── 版本号 ────────────────────────────────────────────────────────────────
-VERSION = "1.02"
+VERSION = "1.03"
 
 # ── 颜色 / 字体常量 ───────────────────────────────────────────────────────
 BG    = "#1e1e2e"
@@ -438,18 +438,28 @@ def preprocess_url(url):
 
 # ── yt-dlp 日志重定向 ─────────────────────────────────────────────────────
 class GUILogger:
-    def __init__(self, log_fn, status_fn):
+    def __init__(self, log_fn, status_fn, control_fn=None):
         self._log = log_fn
         self._status = status_fn
+        # 控制回调：在提取/下载的每条日志处检查暂停/停止，
+        # 让「停止」在提取阶段（如腾讯卡在 Downloading m3u8 information）也能中断
+        self._control = control_fn
+
+    def _ctl(self):
+        if self._control:
+            self._control()
 
     def debug(self, msg):
+        self._ctl()
         if "[debug]" not in msg:
             self._log(msg)
 
     def info(self, msg):
+        self._ctl()
         self._log(msg)
 
     def warning(self, msg):
+        self._ctl()
         self._log(f"[警告] {msg}")
 
     def error(self, msg):
@@ -853,7 +863,8 @@ class App(tk.Tk):
             "ignoreerrors": True,
             "http_headers": headers,
             "ffmpeg_location": os.path.dirname(self._ffmpeg_path),
-            "logger": GUILogger(self._log, self._set_status),
+            "logger": GUILogger(self._log, self._set_status, self._check_control),
+            "socket_timeout": 30,
             "progress_hooks": [self._control_hook, self._progress_hook],
             "color": "never",
         }
@@ -1113,7 +1124,8 @@ class App(tk.Tk):
             "ignoreerrors": True,
             "http_headers": HEADERS_DOUYIN,
             "ffmpeg_location": os.path.dirname(self._ffmpeg_path),
-            "logger": GUILogger(self._log, self._set_status),
+            "logger": GUILogger(self._log, self._set_status, self._check_control),
+            "socket_timeout": 30,
             "progress_hooks": [self._control_hook, self._progress_hook],
             "color": "never",
         }
