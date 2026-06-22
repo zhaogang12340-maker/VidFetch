@@ -26,7 +26,7 @@ except Exception:
         pass
 
 # ── 版本号 ────────────────────────────────────────────────────────────────
-VERSION = "1.03"
+VERSION = "1.04"
 
 # ── 颜色 / 字体常量 ───────────────────────────────────────────────────────
 BG    = "#1e1e2e"
@@ -65,6 +65,16 @@ def find_ffmpeg() -> str | None:
     # 2. PATH
     found = shutil.which("ffmpeg")
     return found
+
+
+def find_aria2c() -> str | None:
+    """返回 aria2c.exe 路径（用于多线程分段下载提速），找不到返回 None。"""
+    # 1. exe 旁边
+    local = os.path.join(_exe_dir(), "aria2c.exe")
+    if os.path.isfile(local):
+        return local
+    # 2. PATH
+    return shutil.which("aria2c")
 
 
 def download_ffmpeg(progress_cb=None, log_cb=None) -> str:
@@ -476,6 +486,7 @@ class App(tk.Tk):
         self.minsize(520, 480)
 
         self._ffmpeg_path = find_ffmpeg()
+        self._aria2c_path = find_aria2c()
         self._thread = None
         # 下载控制：pause_event 置位=运行中，清除=暂停；stop_event 置位=请求停止
         self._pause_event = threading.Event()
@@ -510,7 +521,7 @@ class App(tk.Tk):
         body = tk.Frame(self, bg=BG, padx=20, pady=16)
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1)
-        body.rowconfigure(13, weight=1)
+        body.rowconfigure(14, weight=1)
 
         def lbl(text, row, pady=(0, 4)):
             tk.Label(body, text=text, font=FONT, bg=BG, fg=DIM,
@@ -585,22 +596,39 @@ class App(tk.Tk):
         card_entry(5, self.dir_var, show_browse=True,
                    browse_cmd=self._browse_dir, browse_label="浏览")
 
-        # Cookie 文件
-        lbl("Cookie 文件（可选，用于抖音登录/B站高清）", 6)
+        # Cookie 文件（可选）
+        lbl("Cookie（可选，仅需登录的视频才用）：手动选文件，或下方从浏览器自动获取", 6)
         self.cookie_var = tk.StringVar()
         card_entry(7, self.cookie_var, show_browse=True,
                    browse_cmd=self._browse_cookie, browse_label="选择")
+
+        # 浏览器自动取 Cookie + 极速下载
+        srcrow = tk.Frame(body, bg=BG)
+        srcrow.grid(row=8, column=0, sticky="ew", pady=(0, 12))
+        tk.Label(srcrow, text="从浏览器自动获取 Cookie:", font=FONT_S,
+                 bg=BG, fg=DIM).grid(row=0, column=0, padx=(0, 6))
+        self.cookie_browser_var = tk.StringVar(value="不使用")
+        ttk.Combobox(srcrow, textvariable=self.cookie_browser_var,
+                     values=["不使用", "Chrome", "Edge", "Firefox", "Brave"],
+                     state="readonly", width=9, font=FONT,
+                     style="Dark.TCombobox").grid(row=0, column=1, padx=(0, 18))
+        self.aria2_var = tk.BooleanVar(value=bool(self._aria2c_path))
+        tk.Checkbutton(srcrow, text="极速下载（多线程分段）",
+                       variable=self.aria2_var, font=FONT_S,
+                       bg=BG, fg=DIM, selectcolor=CARD,
+                       activebackground=BG, activeforeground=FG,
+                       highlightthickness=0, bd=0).grid(row=0, column=2)
 
         # ffmpeg 状态
         self.ffmpeg_var = tk.StringVar()
         self._ffmpeg_label = tk.Label(body, textvariable=self.ffmpeg_var,
                                       font=FONT_S, bg=BG, anchor="w")
-        self._ffmpeg_label.grid(row=8, column=0, sticky="w", pady=(0, 8))
+        self._ffmpeg_label.grid(row=9, column=0, sticky="w", pady=(0, 8))
         self._update_ffmpeg_label()
 
         # 下载 / 暂停 / 停止 按钮
         btnrow = tk.Frame(body, bg=BG)
-        btnrow.grid(row=9, column=0, sticky="ew", pady=(0, 12))
+        btnrow.grid(row=10, column=0, sticky="ew", pady=(0, 12))
         btnrow.columnconfigure(0, weight=3)
         btnrow.columnconfigure(1, weight=1)
         btnrow.columnconfigure(2, weight=1)
@@ -633,18 +661,18 @@ class App(tk.Tk):
                            bordercolor=CARD, lightcolor=ACC, darkcolor=ACC)
         self.progress = ttk.Progressbar(body, style="Acc.Horizontal.TProgressbar",
                                         mode="determinate", maximum=100)
-        self.progress.grid(row=10, column=0, sticky="ew", pady=(0, 4))
+        self.progress.grid(row=11, column=0, sticky="ew", pady=(0, 4))
 
         self.status_var = tk.StringVar(value="就绪")
         tk.Label(body, textvariable=self.status_var, font=FONT_S,
-                 bg=BG, fg=DIM, anchor="w").grid(row=11, column=0, sticky="w")
+                 bg=BG, fg=DIM, anchor="w").grid(row=12, column=0, sticky="w")
 
         # 日志
         tk.Label(body, text="下载日志", font=FONT_S, bg=BG, fg=DIM,
-                 anchor="w").grid(row=12, column=0, sticky="w", pady=(10, 4))
+                 anchor="w").grid(row=13, column=0, sticky="w", pady=(10, 4))
         log_outer = tk.Frame(body, bg=CARD, highlightbackground="#444458",
                              highlightthickness=1)
-        log_outer.grid(row=13, column=0, sticky="nsew", pady=(0, 4))
+        log_outer.grid(row=14, column=0, sticky="nsew", pady=(0, 4))
         log_outer.columnconfigure(0, weight=1)
         log_outer.rowconfigure(0, weight=1)
         self.log_text = tk.Text(log_outer, font=FONT_LOG, bg="#12121e", fg="#c0c0d0",
@@ -803,6 +831,8 @@ class App(tk.Tk):
         out_dir = self.dir_var.get().strip() or os.path.join(os.path.expanduser("~"), "Videos", "Downloaded")
         quality = self.quality_var.get()
         cookie  = self.cookie_var.get().strip()
+        cookie_browser = self.cookie_browser_var.get()
+        use_aria2 = bool(self.aria2_var.get())
         try:
             concurrency = max(1, min(5, int(self.concurrency_var.get())))
         except (ValueError, TypeError):
@@ -825,12 +855,14 @@ class App(tk.Tk):
 
         self._thread = threading.Thread(
             target=self._do_download,
-            args=(url, out_dir, quality, cookie, concurrency),
+            args=(url, out_dir, quality, cookie, concurrency,
+                  cookie_browser, use_aria2),
             daemon=True,
         )
         self._thread.start()
 
-    def _do_download(self, url, out_dir, quality_label, cookie_file, concurrency=3):
+    def _do_download(self, url, out_dir, quality_label, cookie_file, concurrency=3,
+                     cookie_browser="不使用", use_aria2=False):
         site = detect_site(url)
 
         # 抖音用户主页 → Playwright 批量下载
@@ -874,8 +906,22 @@ class App(tk.Tk):
             opts["merge_output_format"] = preset["merge_output_format"]
         if preset.get("postprocessors"):
             opts["postprocessors"] = preset["postprocessors"]
-        if cookie_file and os.path.exists(cookie_file):
+        # Cookie：浏览器自动获取优先，其次手动文件（都没有则按免登录下载）
+        if cookie_browser and cookie_browser != "不使用":
+            opts["cookiesfrombrowser"] = (cookie_browser.lower(),)
+            self._log(f"从浏览器自动获取 Cookie：{cookie_browser}")
+        elif cookie_file and os.path.exists(cookie_file):
             opts["cookiefile"] = cookie_file
+        # aria2c 多线程分段下载（仅直连 http/https；分片流 HLS/DASH 仍用原生并发分片）
+        if use_aria2 and self._aria2c_path:
+            opts["external_downloader"] = {"http": self._aria2c_path,
+                                           "https": self._aria2c_path}
+            opts["external_downloader_args"] = {
+                "aria2c": ["-x", "16", "-s", "16", "-k", "1M",
+                           "--max-connection-per-server=16",
+                           "--console-log-level=warn", "--summary-interval=0"],
+            }
+            self._log("⚡ 极速下载已启用（aria2c 多线程分段）")
         if site == "bilibili":
             opts.setdefault("extractor_args", {})["bilibili"] = {"prefer_multi_flv": ["false"]}
 
