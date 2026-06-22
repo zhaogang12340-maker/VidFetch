@@ -19,6 +19,9 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import yt_dlp
 
+# ── 版本号 ────────────────────────────────────────────────────────────────
+VERSION = "1.01"
+
 # ── 颜色 / 字体常量 ───────────────────────────────────────────────────────
 BG    = "#1e1e2e"
 CARD  = "#2a2a3e"
@@ -444,7 +447,7 @@ class GUILogger:
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("VidFetch视频下载工具")
+        self.title(f"VidFetch视频下载工具 v{VERSION}")
         self.resizable(True, True)
         self.configure(bg=BG)
         self.minsize(520, 480)
@@ -472,6 +475,8 @@ class App(tk.Tk):
         hdr.pack(fill="x")
         tk.Label(hdr, text="  VidFetch视频下载工具", font=("微软雅黑", 14, "bold"),
                  bg=ACC, fg="white").pack(side="left")
+        tk.Label(hdr, text=f"v{VERSION} ", font=FONT_S,
+                 bg=ACC, fg="white").pack(side="left", anchor="s", pady=(0, 2))
         tk.Label(hdr, text="Bilibili · 抖音 · YouTube · 腾讯视频 · 爱奇艺  ", font=FONT_S,
                  bg=ACC, fg="#ddd").pack(side="right")
 
