@@ -426,6 +426,12 @@ def preprocess_url(url):
     if m_user:
         sec_uid = m_user.group(1)
         return f"https://www.douyin.com/user/{sec_uid}"
+    # 抖音「精选/发现/首页」里以弹窗形式打开的视频：真正的视频 ID 在 modal_id 参数中
+    # 例如 douyin.com/jingxuan?modal_id=123 → 规范化为 douyin.com/video/123
+    if "douyin.com" in url.lower():
+        m_modal = re.search(r'[?&]modal_id=(\d+)', url)
+        if m_modal:
+            return f"https://www.douyin.com/video/{m_modal.group(1)}"
     return url
 
 
