@@ -444,7 +444,7 @@ class GUILogger:
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("视频下载工具")
+        self.title("VidFetch视频下载工具")
         self.resizable(True, True)
         self.configure(bg=BG)
         self.minsize(520, 480)
@@ -470,7 +470,7 @@ class App(tk.Tk):
         # 标题栏
         hdr = tk.Frame(self, bg=ACC, pady=10)
         hdr.pack(fill="x")
-        tk.Label(hdr, text="  视频下载工具", font=("微软雅黑", 14, "bold"),
+        tk.Label(hdr, text="  VidFetch视频下载工具", font=("微软雅黑", 14, "bold"),
                  bg=ACC, fg="white").pack(side="left")
         tk.Label(hdr, text="Bilibili · 抖音 · YouTube · 腾讯视频 · 爱奇艺  ", font=FONT_S,
                  bg=ACC, fg="#ddd").pack(side="right")
