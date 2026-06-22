@@ -25,20 +25,31 @@ except Exception:
     class DownloadCancelled(Exception):
         pass
 
-# B站 PCDN 节点（mcdn.bilivideo.cn）常用 8082 等非标端口，企业防火墙易拦该端口。
-# 仅去掉非标端口、回落到 443（保留原主机与签名 upsig，不会 403），尝试连通。
+# B站 PCDN 节点（mcdn.bilivideo.cn，常用 8082 等非标端口，企业防火墙常按域名/端口拦截）。
+# 优先用同一条流的「普通 CDN 备用地址」（playurl 接口提供，签名合法）整条替换；
+# 拿不到备用时退而求其次：去掉非标端口、回落 443。
+_BILI_UPGC_RE = re.compile(r'/upgcxcode/[^?]*\.m4s')
 _BILI_PCDN_PORT_RE = re.compile(r'(://[^/]*\.mcdn\.bilivideo\.cn):\d+/')
 
 
 class PatchedYDL(yt_dlp.YoutubeDL):
-    """下载层拦截：把 B站 PCDN 地址的非标端口去掉（回落 443），主机/签名不变。"""
+    """下载层拦截：把 B站 PCDN 地址换成普通 CDN 备用地址（按 upgcxcode 路径匹配）。"""
     def urlopen(self, req):
         try:
             is_str = isinstance(req, str)
             url = req if is_str else getattr(req, "url", "")
-            if url and ".mcdn.bilivideo.cn:" in url:
-                new = _BILI_PCDN_PORT_RE.sub(r"\1/", url)
-                if new != url:
+            if url and "mcdn.bilivideo.cn" in url:
+                new = None
+                cmap = getattr(self, "_bili_cdn_map", None)
+                if cmap:
+                    km = _BILI_UPGC_RE.search(url)
+                    if km and km.group(0) in cmap:
+                        new = cmap[km.group(0)]            # 换成普通 CDN 完整地址（最佳）
+                if new is None:
+                    s = _BILI_PCDN_PORT_RE.sub(r"\1/", url)  # 兜底：去非标端口
+                    if s != url:
+                        new = s
+                if new:
                     if is_str:
                         req = new
                     else:
@@ -48,7 +59,7 @@ class PatchedYDL(yt_dlp.YoutubeDL):
         return super().urlopen(req)
 
 # ── 版本号 ────────────────────────────────────────────────────────────────
-VERSION = "1.07"
+VERSION = "1.08"
 
 # ── 颜色 / 字体常量 ───────────────────────────────────────────────────────
 BG    = "#1e1e2e"
@@ -869,30 +880,58 @@ class App(tk.Tk):
         )
         self._thread.start()
 
-    # ── B站多P分集选择 ───────────────────────────────────────────────────
-    def _get_bili_parts(self, url, site):
-        """B站多P视频：用 pagelist API 取分集 [(page, title), ...]（>1 才返回），否则 None。"""
+    # ── B站分集 / PCDN 备用地址 ───────────────────────────────────────────
+    def _get_bili_pages(self, url, site):
+        """B站 /video/BV 的分集 [(page, title, cid), ...]（含单P）；非B站或失败返回 None。"""
         if site != "bilibili":
             return None
         m = re.search(r'/video/(BV[0-9A-Za-z]+)', url)
-        if not m or re.search(r'[?&]p=\d+', url):   # 已指定某一P则不弹选择框
+        if not m:
             return None
         try:
-            bv = m.group(1)
-            api = f"https://api.bilibili.com/x/player/pagelist?bvid={bv}"
+            api = f"https://api.bilibili.com/x/player/pagelist?bvid={m.group(1)}"
             req = urllib.request.Request(api, headers={
                 "User-Agent": HEADERS_BILIBILI["User-Agent"],
                 "Referer": "https://www.bilibili.com/"})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.load(resp)
             pages = data.get("data") or []
-            if len(pages) > 1:
+            if pages:
                 return [(p.get("page", i + 1),
-                         (p.get("part") or f"P{p.get('page', i + 1)}").strip())
+                         (p.get("part") or f"P{p.get('page', i + 1)}").strip(),
+                         p.get("cid"))
                         for i, p in enumerate(pages)]
         except Exception as e:
-            self._log(f"[提示] 获取分集列表失败，将下载全部：{str(e)[:50]}")
+            self._log(f"[提示] 获取分集列表失败：{str(e)[:50]}")
         return None
+
+    def _build_bili_cdn_map(self, bvid, cids):
+        """对每个 cid 调 playurl，建 {upgcxcode路径: 非mcdn完整地址}，把被拦的 PCDN 换成普通 CDN。"""
+        cdn_map = {}
+        hdr = {"User-Agent": HEADERS_BILIBILI["User-Agent"], "Referer": "https://www.bilibili.com/"}
+        for cid in cids:
+            if not cid:
+                continue
+            try:
+                api = (f"https://api.bilibili.com/x/player/playurl?bvid={bvid}&cid={cid}"
+                       f"&qn=127&fnval=4048&fnver=0&fourk=1")
+                req = urllib.request.Request(api, headers=hdr)
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    data = json.load(resp)
+                dash = (data.get("data") or {}).get("dash") or {}
+                for s in (dash.get("video") or []) + (dash.get("audio") or []):
+                    base = s.get("baseUrl") or s.get("base_url")
+                    backs = s.get("backupUrl") or s.get("backup_url") or []
+                    km = _BILI_UPGC_RE.search(base or "")
+                    if not km:
+                        continue
+                    good = next((u for u in [base] + list(backs)
+                                 if u and "mcdn.bilivideo.cn" not in u), None)
+                    if good:
+                        cdn_map[km.group(0)] = good
+            except Exception:
+                continue
+        return cdn_map
 
     def _ask_episode_selection(self, parts):
         """主线程弹分集勾选框。返回选中的 page 列表；点取消/关闭返回 None。"""
@@ -971,21 +1010,41 @@ class App(tk.Tk):
             self._do_douyin_user_batch(url, out_dir, quality_label, cookie_file, concurrency)
             return
 
-        # B站多P合集：先让用户勾选要下载哪些分集（默认全选）
+        # B站：取分集（含 cid），多P 弹勾选；并构建 PCDN→普通CDN 备用地址映射
         selected_items = None
-        parts = self._get_bili_parts(url, site)
-        if parts:
-            self._set_status("请选择要下载的分集...")
-            sel = self._ask_episode_selection(parts)
-            if sel is None:
-                self._log("已取消下载"); self._set_status("已取消"); self._set_btn(True); return
-            if not sel:
-                self._log("未勾选任何分集，已取消"); self._set_status("已取消"); self._set_btn(True); return
-            if len(sel) < len(parts):
-                selected_items = ",".join(str(p) for p in sel)
-                self._log(f"已选择 {len(sel)}/{len(parts)} 个分集：P{selected_items}")
+        bili_cdn_map = {}
+        pages = self._get_bili_pages(url, site)        # [(page, title, cid)] 或 None
+        if pages:
+            has_p = re.search(r'[?&]p=(\d+)', url)
+            sel_pages = None
+            if len(pages) > 1 and not has_p:           # 多P且未指定某一P → 弹勾选
+                self._set_status("请选择要下载的分集...")
+                parts = [(pg, t) for pg, t, _ in pages]
+                sel = self._ask_episode_selection(parts)
+                if sel is None:
+                    self._log("已取消下载"); self._set_status("已取消"); self._set_btn(True); return
+                if not sel:
+                    self._log("未勾选任何分集，已取消"); self._set_status("已取消"); self._set_btn(True); return
+                if len(sel) < len(pages):
+                    selected_items = ",".join(str(p) for p in sel)
+                    self._log(f"已选择 {len(sel)}/{len(pages)} 个分集：P{selected_items}")
+                    sel_pages = set(sel)
+                else:
+                    self._log(f"已选择全部 {len(pages)} 个分集")
+            # 计算要建映射的 cid（与实际下载范围一致）
+            if has_p:
+                want = {int(has_p.group(1))}
+            elif sel_pages is not None:
+                want = sel_pages
             else:
-                self._log(f"已选择全部 {len(parts)} 个分集")
+                want = {pg for pg, _, _ in pages}
+            cids = [c for pg, _, c in pages if pg in want and c]
+            bvid_m = re.search(r'/video/(BV[0-9A-Za-z]+)', url)
+            if cids and bvid_m:
+                self._set_status("准备 CDN 备用地址...")
+                bili_cdn_map = self._build_bili_cdn_map(bvid_m.group(1), cids)
+                if bili_cdn_map:
+                    self._log(f"已准备 {len(bili_cdn_map)} 个普通CDN备用地址，自动规避被拦的 PCDN")
 
         preset  = QUALITIES[quality_label]
         headers = HEADERS_BILIBILI if site == "bilibili" else HEADERS_DOUYIN
@@ -1042,6 +1101,7 @@ class App(tk.Tk):
 
         try:
             with PatchedYDL(opts) as ydl:
+                ydl._bili_cdn_map = bili_cdn_map      # B站 PCDN→普通CDN 替换表
                 code = ydl.download([url])
             if code == 0:
                 self._log("✓ 下载完成！")
