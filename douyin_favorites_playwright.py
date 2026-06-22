@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 用 Playwright 打开抖音收藏夹页面，拦截 API 响应获取全部视频 ID，再用 yt-dlp 下载。
-用法: python douyin_favorites_playwright.py --sec-uid YOUR_SEC_UID --cookies cookies_douyin.txt -o C:\Videos\收藏夹
+用法: python douyin_favorites_playwright.py --sec-uid YOUR_SEC_UID --cookies cookies_douyin.txt -o ./收藏夹
 """
 import sys, io, os, time, json, argparse, http.cookiejar, asyncio
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -231,8 +231,11 @@ def main():
     )
     parser.add_argument("--sec-uid", required=True,
                         help="抖音用户 sec_uid（从收藏夹页面 URL 中获取）")
-    parser.add_argument("--cookies", default="cookies_douyin.txt")
-    parser.add_argument("-o", "--output", default="C:/VideoDownloader/Downloads/抖音收藏夹")
+    parser.add_argument("--cookies", default="cookies_douyin.txt",
+                        help="Cookie 文件路径（默认：当前目录下 cookies_douyin.txt）")
+    parser.add_argument("-o", "--output",
+                        default=os.path.join(os.path.expanduser("~"), "Videos", "抖音收藏夹"),
+                        help="下载目录（默认：用户主目录下 Videos/抖音收藏夹）")
     parser.add_argument("-q", "--quality", default="best",
                         choices=["best", "medium", "low", "audio"],
                         help="清晰度: best/medium/low/audio（默认: best）")

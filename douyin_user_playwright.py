@@ -179,8 +179,11 @@ async def main_async(args):
 def main():
     parser = argparse.ArgumentParser(description="下载抖音博主所有作品（Playwright 版）")
     parser.add_argument("--url", required=True, help="博主主页 URL（douyin.com/user/...）")
-    parser.add_argument("--cookies", default="C:/VideoDownloader/all_cookies.txt")
-    parser.add_argument("-o", "--output", default="C:/VideoDownloader/Downloads/抖音用户视频")
+    parser.add_argument("--cookies", default="all_cookies.txt",
+                        help="Cookie 文件路径（默认：当前目录下 all_cookies.txt）")
+    parser.add_argument("-o", "--output",
+                        default=os.path.join(os.path.expanduser("~"), "Videos", "抖音用户视频"),
+                        help="下载目录（默认：用户主目录下 Videos/抖音用户视频）")
     parser.add_argument("-q", "--quality", default="best",
                         choices=list(QUALITY_PRESETS.keys()),
                         help="best/4k/1080p/720p/low/audio（默认: best）")
