@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 用 Playwright 打开抖音收藏夹页面，拦截 API 响应获取全部视频 ID，再用 yt-dlp 下载。
-用法: python douyin_favorites_playwright.py --cookies cookies_douyin.txt -o C:\Videos\收藏夹
+用法: python douyin_favorites_playwright.py --sec-uid YOUR_SEC_UID --cookies cookies_douyin.txt -o C:\Videos\收藏夹
 """
 import sys, io, os, time, json, argparse, http.cookiejar, asyncio
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -16,8 +16,7 @@ DOUYIN_HEADERS = {
     "Referer": "https://www.douyin.com/",
 }
 
-SEC_UID = "YOUR_SEC_UID"
-FAV_URL = f"https://www.douyin.com/user/{SEC_UID}?showTab=favorite_collection"
+# 你的抖音 sec_uid（从收藏夹页面 URL 中获取），通过 --sec-uid 传入
 
 
 def load_cookies_for_playwright(cookie_file: str) -> list:
@@ -42,9 +41,10 @@ def load_cookies_for_playwright(cookie_file: str) -> list:
     return result
 
 
-async def collect_video_ids(cookie_file: str) -> list:
+async def collect_video_ids(cookie_file: str, sec_uid: str) -> list:
     videos = []
     seen_ids = set()
+    fav_url = f"https://www.douyin.com/user/{sec_uid}?showTab=favorite_collection"
 
     def on_response(resp):
         if "listcollect" in resp.url or "collect" in resp.url and "aweme" in resp.url:
@@ -90,7 +90,7 @@ async def collect_video_ids(cookie_file: str) -> list:
 
         print(f"\n正在打开收藏夹页面...")
         try:
-            await page.goto(FAV_URL, wait_until="domcontentloaded", timeout=20000)
+            await page.goto(fav_url, wait_until="domcontentloaded", timeout=20000)
         except Exception:
             pass
         await asyncio.sleep(5)
@@ -200,7 +200,7 @@ async def main_async(args):
     label = QUALITY_PRESETS[args.quality]["label"]
     print(f"清晰度: {label}")
 
-    videos = await collect_video_ids(args.cookies)
+    videos = await collect_video_ids(args.cookies, args.sec_uid)
 
     if not videos:
         print("\n[!] 未能获取视频列表")
@@ -224,11 +224,13 @@ def main():
   audio  纯音频 mp3，最适合语音转文字
 
 示例:
-  python douyin_favorites_playwright.py --cookies cookies_douyin.txt
-  python douyin_favorites_playwright.py --quality audio --cookies cookies_douyin.txt
-  python douyin_favorites_playwright.py --quality low -o D:/Videos --cookies cookies_douyin.txt
+  python douyin_favorites_playwright.py --sec-uid YOUR_SEC_UID --cookies cookies_douyin.txt
+  python douyin_favorites_playwright.py --sec-uid YOUR_SEC_UID --quality audio --cookies cookies_douyin.txt
+  python douyin_favorites_playwright.py --sec-uid YOUR_SEC_UID --quality low -o D:/Videos --cookies cookies_douyin.txt
         """,
     )
+    parser.add_argument("--sec-uid", required=True,
+                        help="抖音用户 sec_uid（从收藏夹页面 URL 中获取）")
     parser.add_argument("--cookies", default="cookies_douyin.txt")
     parser.add_argument("-o", "--output", default="C:/VideoDownloader/Downloads/抖音收藏夹")
     parser.add_argument("-q", "--quality", default="best",
