@@ -18,6 +18,12 @@ if sys.stderr and hasattr(sys.stderr, "buffer"):
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import yt_dlp
+try:
+    # 在进度钩子里抛出它可中止 yt-dlp 下载，且不会被 ignoreerrors 吞掉
+    from yt_dlp.utils import DownloadCancelled
+except Exception:
+    class DownloadCancelled(Exception):
+        pass
 
 # ── 版本号 ────────────────────────────────────────────────────────────────
 VERSION = "1.01"
@@ -454,6 +460,10 @@ class App(tk.Tk):
 
         self._ffmpeg_path = find_ffmpeg()
         self._thread = None
+        # 下载控制：pause_event 置位=运行中，清除=暂停；stop_event 置位=请求停止
+        self._pause_event = threading.Event()
+        self._pause_event.set()
+        self._stop_event = threading.Event()
         self._build_ui()
         self._center()
 
@@ -571,14 +581,33 @@ class App(tk.Tk):
         self._ffmpeg_label.grid(row=8, column=0, sticky="w", pady=(0, 8))
         self._update_ffmpeg_label()
 
-        # 下载按钮
-        self.btn = tk.Button(body, text="下  载",
+        # 下载 / 暂停 / 停止 按钮
+        btnrow = tk.Frame(body, bg=BG)
+        btnrow.grid(row=9, column=0, sticky="ew", pady=(0, 12))
+        btnrow.columnconfigure(0, weight=3)
+        btnrow.columnconfigure(1, weight=1)
+        btnrow.columnconfigure(2, weight=1)
+        self.btn = tk.Button(btnrow, text="下  载",
                              font=("微软雅黑", 12, "bold"),
                              bg=ACC, fg="white", relief="flat", bd=0,
                              pady=10, cursor="hand2",
                              activebackground="#6a5ce6", activeforeground="white",
                              command=self._start_download)
-        self.btn.grid(row=9, column=0, sticky="ew", pady=(0, 12))
+        self.btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.pause_btn = tk.Button(btnrow, text="暂停",
+                                   font=("微软雅黑", 11, "bold"),
+                                   bg="#555568", fg="white", relief="flat", bd=0,
+                                   pady=10, cursor="hand2", state="disabled",
+                                   activebackground="#6a6a7e", activeforeground="white",
+                                   command=self._toggle_pause)
+        self.pause_btn.grid(row=0, column=1, sticky="ew", padx=3)
+        self.stop_btn = tk.Button(btnrow, text="停止",
+                                  font=("微软雅黑", 11, "bold"),
+                                  bg="#555568", fg="white", relief="flat", bd=0,
+                                  pady=10, cursor="hand2", state="disabled",
+                                  activebackground="#c0504d", activeforeground="white",
+                                  command=self._stop_download)
+        self.stop_btn.grid(row=0, column=2, sticky="ew", padx=(6, 0))
 
         # 进度条
         pb_style = ttk.Style()
@@ -685,11 +714,60 @@ class App(tk.Tk):
         self.after(0, lambda: self.status_var.set(msg))
 
     def _set_btn(self, enabled):
-        self.after(0, lambda: self.btn.configure(
-            state="normal" if enabled else "disabled",
-            bg=ACC if enabled else "#555568",
-            text="下  载" if enabled else "下载中...",
-        ))
+        """enabled=True 表示空闲态（可开始下载）；False 表示下载中。"""
+        def _upd():
+            self.btn.configure(
+                state="normal" if enabled else "disabled",
+                bg=ACC if enabled else "#555568",
+                text="下  载" if enabled else "下载中...",
+            )
+            self.pause_btn.configure(
+                state="disabled" if enabled else "normal",
+                text="暂停")
+            self.stop_btn.configure(
+                state="disabled" if enabled else "normal")
+        self.after(0, _upd)
+
+    # ── 暂停 / 停止 控制 ─────────────────────────────────────────────────
+    def _wait_if_paused(self):
+        """若处于暂停态则阻塞，直到继续或请求停止。"""
+        while not self._pause_event.is_set():
+            if self._stop_event.wait(0.1):   # 暂停期间也能立即响应停止
+                return
+
+    def _check_control(self):
+        """下载循环/进度钩子里的检查点：暂停则等待，停止则抛出取消异常。"""
+        self._wait_if_paused()
+        if self._stop_event.is_set():
+            raise DownloadCancelled()
+
+    def _control_hook(self, d):
+        # 作为 yt-dlp 的第一个 progress_hook，负责暂停阻塞与停止中止
+        self._check_control()
+
+    def _toggle_pause(self):
+        if self._thread is None or not self._thread.is_alive():
+            return
+        if self._pause_event.is_set():
+            self._pause_event.clear()
+            self.pause_btn.configure(text="继续")
+            self._set_status("已暂停")
+            self._log("⏸ 已暂停")
+        else:
+            self._pause_event.set()
+            self.pause_btn.configure(text="暂停")
+            self._set_status("继续下载...")
+            self._log("▶ 继续下载")
+
+    def _stop_download(self):
+        if self._thread is None or not self._thread.is_alive():
+            return
+        self._stop_event.set()
+        self._pause_event.set()   # 解除可能存在的暂停等待，让线程尽快看到停止
+        self.stop_btn.configure(state="disabled")
+        self.pause_btn.configure(state="disabled")
+        self._set_status("正在停止...")
+        self._log("⏹ 正在停止...")
 
     # ── 下载 ─────────────────────────────────────────────────────────────
     def _start_download(self):
@@ -713,6 +791,8 @@ class App(tk.Tk):
         except (ValueError, TypeError):
             concurrency = 3
 
+        self._stop_event.clear()
+        self._pause_event.set()
         self._set_btn(False)
         self.progress.configure(value=0)
         self._set_status("准备中...")
@@ -767,7 +847,7 @@ class App(tk.Tk):
             "http_headers": headers,
             "ffmpeg_location": os.path.dirname(self._ffmpeg_path),
             "logger": GUILogger(self._log, self._set_status),
-            "progress_hooks": [self._progress_hook],
+            "progress_hooks": [self._control_hook, self._progress_hook],
             "color": "never",
         }
         if playlist:
@@ -791,6 +871,9 @@ class App(tk.Tk):
             else:
                 self._log("下载遇到问题，请查看日志")
                 self._set_status("下载遇到问题")
+        except DownloadCancelled:
+            self._log("⏹ 已停止下载")
+            self._set_status("已停止")
         except Exception as e:
             self._log(f"[错误] {e}")
             self._set_status("出错")
@@ -855,6 +938,8 @@ class App(tk.Tk):
                     f.write(vid + "\n")
 
         def _worker(i, v):
+            if self._stop_event.is_set():
+                return
             vid = v["id"]
             if vid in done_ids:
                 with lock:
@@ -884,6 +969,8 @@ class App(tk.Tk):
                     else:
                         _bump("failed")
                         self._log(f"[{i}/{total}] [失败] {v['title'][:46]}")
+            except DownloadCancelled:
+                return                      # 用户停止，不计为失败
             except Exception as e:
                 _bump("failed")
                 self._log(f"[{i}/{total}] [失败] {v['title'][:40]}：{str(e)[:50]}")
@@ -894,9 +981,13 @@ class App(tk.Tk):
                 d = counters["done"]
                 self._set_status(f"已完成 {d}/{total}（成功{counters['ok']} 失败{counters['failed']}）")
 
-        self._log(f"\n✓ 全部完成！成功 {counters['ok']}，跳过 {counters['skipped']}，失败 {counters['failed']}（共 {total}）")
-        self._set_status(f"完成：成功 {counters['ok']} / 共 {total}")
-        self.after(0, lambda: self.progress.configure(value=100))
+        if self._stop_event.is_set():
+            self._log(f"\n⏹ 已停止（成功 {counters['ok']}，跳过 {counters['skipped']}，共 {total}）")
+            self._set_status("已停止")
+        else:
+            self._log(f"\n✓ 全部完成！成功 {counters['ok']}，跳过 {counters['skipped']}，失败 {counters['failed']}（共 {total}）")
+            self._set_status(f"完成：成功 {counters['ok']} / 共 {total}")
+            self.after(0, lambda: self.progress.configure(value=100))
         self._set_btn(True)
 
     def _download_douyin_video(self, cdn_url, base_path, height):
@@ -933,19 +1024,24 @@ class App(tk.Tk):
             "User-Agent": HEADERS_DOUYIN["User-Agent"],
             "Referer": "https://www.douyin.com/",
         })
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            total = int(resp.headers.get("Content-Length", 0))
-            done = 0
-            chunk = 1024 * 256
-            with open(out_path, "wb") as f:
-                while True:
-                    buf = resp.read(chunk)
-                    if not buf:
-                        break
-                    f.write(buf)
-                    done += len(buf)
-                    if total > 0:
-                        self._set_progress(done / total * 100)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                total = int(resp.headers.get("Content-Length", 0))
+                done = 0
+                chunk = 1024 * 256
+                with open(out_path, "wb") as f:
+                    while True:
+                        self._check_control()        # 暂停/停止 检查点
+                        buf = resp.read(chunk)
+                        if not buf:
+                            break
+                        f.write(buf)
+                        done += len(buf)
+                        if total > 0:
+                            self._set_progress(done / total * 100)
+        except BaseException:
+            self._remove_partial(out_path)           # 中断时清理半成品
+            raise
 
     def _download_no_progress(self, url, out_path):
         """不更新进度条的流式下载（并发场景，进度按完成数统计）。"""
@@ -953,9 +1049,27 @@ class App(tk.Tk):
             "User-Agent": HEADERS_DOUYIN["User-Agent"],
             "Referer": "https://www.douyin.com/",
         })
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            with open(out_path, "wb") as f:
-                shutil.copyfileobj(resp, f, 1024 * 256)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                chunk = 1024 * 256
+                with open(out_path, "wb") as f:
+                    while True:
+                        self._check_control()        # 暂停/停止 检查点
+                        buf = resp.read(chunk)
+                        if not buf:
+                            break
+                        f.write(buf)
+        except BaseException:
+            self._remove_partial(out_path)           # 中断时清理半成品
+            raise
+
+    @staticmethod
+    def _remove_partial(path):
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
     def _download_douyin_video_quiet(self, cdn_url, base_path, height):
         out = f"{base_path}_{height}p.mp4"
@@ -993,7 +1107,7 @@ class App(tk.Tk):
             "http_headers": HEADERS_DOUYIN,
             "ffmpeg_location": os.path.dirname(self._ffmpeg_path),
             "logger": GUILogger(self._log, self._set_status),
-            "progress_hooks": [self._progress_hook],
+            "progress_hooks": [self._control_hook, self._progress_hook],
             "color": "never",
         }
         if preset.get("merge_output_format"):
