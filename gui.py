@@ -529,6 +529,20 @@ class App(tk.Tk):
                         foreground=FG, selectbackground=ACC,
                         selectforeground="white", arrowcolor=FG,
                         bordercolor=CARD, lightcolor=CARD, darkcolor=CARD)
+        # readonly 状态下 ttk 用「选中色」绘制当前值，必须为该状态显式映射颜色，
+        # 否则深色主题下文字与背景同色，导致选了值却看不见
+        style.map("Dark.TCombobox",
+                  fieldbackground=[("readonly", CARD), ("disabled", CARD)],
+                  foreground=[("readonly", FG), ("disabled", DIM)],
+                  selectbackground=[("readonly", CARD)],
+                  selectforeground=[("readonly", FG)],
+                  background=[("readonly", CARD)],
+                  arrowcolor=[("readonly", FG)])
+        # 下拉弹出列表（独立 Listbox，不受 TCombobox 样式控制）配色
+        self.option_add("*TCombobox*Listbox.background", CARD)
+        self.option_add("*TCombobox*Listbox.foreground", FG)
+        self.option_add("*TCombobox*Listbox.selectBackground", ACC)
+        self.option_add("*TCombobox*Listbox.selectForeground", "white")
         ttk.Combobox(qf, textvariable=self.quality_var,
                      values=list(QUALITIES.keys()), state="readonly",
                      font=FONT, style="Dark.TCombobox").grid(
