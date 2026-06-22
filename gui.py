@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """视频下载工具 - 支持 Bilibili / 抖音"""
-import sys, io, os, threading, re, shutil, zipfile, urllib.request, tempfile, asyncio, http.cookiejar
+import sys, io, os, threading, re, shutil, zipfile, urllib.request, tempfile, asyncio, http.cookiejar, json
 
 # 打包成 exe 后，Playwright 会去临时解压目录找浏览器（找不到）。
 # 这里强制指向用户标准安装位置 %LOCALAPPDATA%\ms-playwright。
@@ -26,7 +26,7 @@ except Exception:
         pass
 
 # ── 版本号 ────────────────────────────────────────────────────────────────
-VERSION = "1.04"
+VERSION = "1.05"
 
 # ── 颜色 / 字体常量 ───────────────────────────────────────────────────────
 BG    = "#1e1e2e"
@@ -443,6 +443,11 @@ def preprocess_url(url):
     if m_user:
         sec_uid = m_user.group(1)
         return f"https://www.douyin.com/user/{sec_uid}"
+    # B站：裸域名 bilibili.com / m.bilibili.com 某些接口会 403，统一规范成 www 主域
+    # （不动 space./b23.tv 等其它子域名与短链）
+    m_bili = re.match(r'(?i)^\s*(?:https?://)?(?:www\.|m\.)?bilibili\.com(/[^\s]*)?$', url)
+    if m_bili:
+        return "https://www.bilibili.com" + (m_bili.group(1) or "")
     return url
 
 
@@ -861,6 +866,99 @@ class App(tk.Tk):
         )
         self._thread.start()
 
+    # ── B站多P分集选择 ───────────────────────────────────────────────────
+    def _get_bili_parts(self, url, site):
+        """B站多P视频：用 pagelist API 取分集 [(page, title), ...]（>1 才返回），否则 None。"""
+        if site != "bilibili":
+            return None
+        m = re.search(r'/video/(BV[0-9A-Za-z]+)', url)
+        if not m or re.search(r'[?&]p=\d+', url):   # 已指定某一P则不弹选择框
+            return None
+        try:
+            bv = m.group(1)
+            api = f"https://api.bilibili.com/x/player/pagelist?bvid={bv}"
+            req = urllib.request.Request(api, headers={
+                "User-Agent": HEADERS_BILIBILI["User-Agent"],
+                "Referer": "https://www.bilibili.com/"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.load(resp)
+            pages = data.get("data") or []
+            if len(pages) > 1:
+                return [(p.get("page", i + 1),
+                         (p.get("part") or f"P{p.get('page', i + 1)}").strip())
+                        for i, p in enumerate(pages)]
+        except Exception as e:
+            self._log(f"[提示] 获取分集列表失败，将下载全部：{str(e)[:50]}")
+        return None
+
+    def _ask_episode_selection(self, parts):
+        """主线程弹分集勾选框。返回选中的 page 列表；点取消/关闭返回 None。"""
+        holder = {"result": None}
+        done = threading.Event()
+
+        def _show():
+            win = tk.Toplevel(self)
+            win.title("选择要下载的分集")
+            win.configure(bg=BG)
+            win.transient(self)
+            win.grab_set()
+            tk.Label(win, text=f"共 {len(parts)} 个分集，默认全选；取消勾选不想下载的：",
+                     font=FONT, bg=BG, fg=FG).pack(anchor="w", padx=12, pady=(12, 6))
+            outer = tk.Frame(win, bg=CARD, highlightbackground="#444458", highlightthickness=1)
+            outer.pack(fill="both", expand=True, padx=12)
+            canvas = tk.Canvas(outer, bg=CARD, highlightthickness=0, height=320, width=470)
+            sb = tk.Scrollbar(outer, command=canvas.yview)
+            inner = tk.Frame(canvas, bg=CARD)
+            canvas.configure(yscrollcommand=sb.set)
+            canvas.pack(side="left", fill="both", expand=True)
+            sb.pack(side="right", fill="y")
+            cw = canvas.create_window((0, 0), window=inner, anchor="nw")
+            inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+            canvas.bind("<Configure>", lambda e: canvas.itemconfig(cw, width=e.width))
+            vars_ = []
+            for page, title in parts:
+                v = tk.BooleanVar(value=True)
+                vars_.append((page, v))
+                tk.Checkbutton(inner, text=f"P{page}　{title}", variable=v,
+                               font=FONT_S, bg=CARD, fg=FG, selectcolor=BG,
+                               activebackground=CARD, activeforeground=FG,
+                               anchor="w", highlightthickness=0, bd=0,
+                               wraplength=430, justify="left").pack(fill="x", anchor="w", padx=6, pady=1)
+
+            def _wheel(e):
+                canvas.yview_scroll(int(-e.delta / 120), "units")
+            canvas.bind_all("<MouseWheel>", _wheel)
+
+            def _set_all(val):
+                for _, v in vars_:
+                    v.set(val)
+
+            def _finish(result):
+                holder["result"] = result
+                try:
+                    canvas.unbind_all("<MouseWheel>")
+                except Exception:
+                    pass
+                win.destroy()
+                done.set()
+
+            bar = tk.Frame(win, bg=BG)
+            bar.pack(fill="x", padx=12, pady=10)
+            tk.Button(bar, text="全选", font=FONT_S, bg="#444458", fg=FG, relief="flat",
+                      bd=0, padx=10, pady=4, command=lambda: _set_all(True)).pack(side="left")
+            tk.Button(bar, text="全不选", font=FONT_S, bg="#444458", fg=FG, relief="flat",
+                      bd=0, padx=10, pady=4, command=lambda: _set_all(False)).pack(side="left", padx=6)
+            tk.Button(bar, text="取消", font=FONT_S, bg="#555568", fg="white", relief="flat",
+                      bd=0, padx=12, pady=4, command=lambda: _finish(None)).pack(side="right")
+            tk.Button(bar, text="开始下载", font=("微软雅黑", 10, "bold"), bg=ACC, fg="white",
+                      relief="flat", bd=0, padx=12, pady=4,
+                      command=lambda: _finish([pg for pg, v in vars_ if v.get()])).pack(side="right", padx=6)
+            win.protocol("WM_DELETE_WINDOW", lambda: _finish(None))
+
+        self.after(0, _show)
+        done.wait()
+        return holder["result"]
+
     def _do_download(self, url, out_dir, quality_label, cookie_file, concurrency=3,
                      cookie_browser="不使用", use_aria2=False):
         site = detect_site(url)
@@ -869,6 +967,22 @@ class App(tk.Tk):
         if site == "douyin" and _is_douyin_user_url(url):
             self._do_douyin_user_batch(url, out_dir, quality_label, cookie_file, concurrency)
             return
+
+        # B站多P合集：先让用户勾选要下载哪些分集（默认全选）
+        selected_items = None
+        parts = self._get_bili_parts(url, site)
+        if parts:
+            self._set_status("请选择要下载的分集...")
+            sel = self._ask_episode_selection(parts)
+            if sel is None:
+                self._log("已取消下载"); self._set_status("已取消"); self._set_btn(True); return
+            if not sel:
+                self._log("未勾选任何分集，已取消"); self._set_status("已取消"); self._set_btn(True); return
+            if len(sel) < len(parts):
+                selected_items = ",".join(str(p) for p in sel)
+                self._log(f"已选择 {len(sel)}/{len(parts)} 个分集：P{selected_items}")
+            else:
+                self._log(f"已选择全部 {len(parts)} 个分集")
 
         preset  = QUALITIES[quality_label]
         headers = HEADERS_BILIBILI if site == "bilibili" else HEADERS_DOUYIN
@@ -902,6 +1016,8 @@ class App(tk.Tk):
         }
         if playlist:
             opts["download_archive"] = os.path.join(out_dir, archive_name(quality_label))
+        if selected_items:                       # B站多P：只下用户勾选的分集
+            opts["playlist_items"] = selected_items
         if preset.get("merge_output_format"):
             opts["merge_output_format"] = preset["merge_output_format"]
         if preset.get("postprocessors"):
@@ -924,6 +1040,12 @@ class App(tk.Tk):
             self._log("⚡ 极速下载已启用（aria2c 多线程分段）")
         if site == "bilibili":
             opts.setdefault("extractor_args", {})["bilibili"] = {"prefer_multi_flv": ["false"]}
+            has_cookie = (cookie_browser and cookie_browser != "不使用") or \
+                         (cookie_file and os.path.exists(cookie_file))
+            if not has_cookie:
+                self._log("⚠ B站未登录：部分视频画质会被限制（常见≤480p）。若清晰度不理想，"
+                          "可在「从浏览器自动获取 Cookie」选择已登录B站的浏览器（如 Edge/Chrome）；"
+                          "若登录后仍是 480p，则是该视频源本身清晰度就低。")
 
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
