@@ -25,30 +25,30 @@ except Exception:
     class DownloadCancelled(Exception):
         pass
 
-# B站 PCDN 域名（mcdn.bilivideo.cn，常用 8082 等非标端口，企业防火墙易拦截）
-# 自动改写为普通 upos 镜像，路径不变 —— 绕开连接被拒
-_BILI_PCDN_RE = re.compile(r'://[^/]*\.mcdn\.bilivideo\.cn(?::\d+)?/')
-_BILI_MIRROR = "upos-sz-mirrorcoso1.bilivideo.com"
+# B站 PCDN 节点（mcdn.bilivideo.cn）常用 8082 等非标端口，企业防火墙易拦该端口。
+# 仅去掉非标端口、回落到 443（保留原主机与签名 upsig，不会 403），尝试连通。
+_BILI_PCDN_PORT_RE = re.compile(r'(://[^/]*\.mcdn\.bilivideo\.cn):\d+/')
 
 
 class PatchedYDL(yt_dlp.YoutubeDL):
-    """下载层拦截：把 B站 PCDN 地址改写成普通镜像（原生下载器都走 urlopen）。"""
+    """下载层拦截：把 B站 PCDN 地址的非标端口去掉（回落 443），主机/签名不变。"""
     def urlopen(self, req):
         try:
             is_str = isinstance(req, str)
             url = req if is_str else getattr(req, "url", "")
-            if url and "mcdn.bilivideo.cn" in url:
-                new = _BILI_PCDN_RE.sub(f"://{_BILI_MIRROR}/", url)
-                if is_str:
-                    req = new
-                else:
-                    req.url = new
+            if url and ".mcdn.bilivideo.cn:" in url:
+                new = _BILI_PCDN_PORT_RE.sub(r"\1/", url)
+                if new != url:
+                    if is_str:
+                        req = new
+                    else:
+                        req.url = new
         except Exception:
             pass
         return super().urlopen(req)
 
 # ── 版本号 ────────────────────────────────────────────────────────────────
-VERSION = "1.06"
+VERSION = "1.07"
 
 # ── 颜色 / 字体常量 ───────────────────────────────────────────────────────
 BG    = "#1e1e2e"
@@ -87,16 +87,6 @@ def find_ffmpeg() -> str | None:
     # 2. PATH
     found = shutil.which("ffmpeg")
     return found
-
-
-def find_aria2c() -> str | None:
-    """返回 aria2c.exe 路径（用于多线程分段下载提速），找不到返回 None。"""
-    # 1. exe 旁边
-    local = os.path.join(_exe_dir(), "aria2c.exe")
-    if os.path.isfile(local):
-        return local
-    # 2. PATH
-    return shutil.which("aria2c")
 
 
 def download_ffmpeg(progress_cb=None, log_cb=None) -> str:
@@ -513,7 +503,6 @@ class App(tk.Tk):
         self.minsize(520, 480)
 
         self._ffmpeg_path = find_ffmpeg()
-        self._aria2c_path = find_aria2c()
         self._thread = None
         # 下载控制：pause_event 置位=运行中，清除=暂停；stop_event 置位=请求停止
         self._pause_event = threading.Event()
@@ -639,12 +628,6 @@ class App(tk.Tk):
                      values=["不使用", "Chrome", "Edge", "Firefox", "Brave"],
                      state="readonly", width=9, font=FONT,
                      style="Dark.TCombobox").grid(row=0, column=1, padx=(0, 18))
-        self.aria2_var = tk.BooleanVar(value=bool(self._aria2c_path))
-        tk.Checkbutton(srcrow, text="极速下载（多线程分段）",
-                       variable=self.aria2_var, font=FONT_S,
-                       bg=BG, fg=DIM, selectcolor=CARD,
-                       activebackground=BG, activeforeground=FG,
-                       highlightthickness=0, bd=0).grid(row=0, column=2)
 
         # ffmpeg 状态
         self.ffmpeg_var = tk.StringVar()
@@ -859,7 +842,6 @@ class App(tk.Tk):
         quality = self.quality_var.get()
         cookie  = self.cookie_var.get().strip()
         cookie_browser = self.cookie_browser_var.get()
-        use_aria2 = bool(self.aria2_var.get())
         try:
             concurrency = max(1, min(5, int(self.concurrency_var.get())))
         except (ValueError, TypeError):
@@ -882,8 +864,7 @@ class App(tk.Tk):
 
         self._thread = threading.Thread(
             target=self._do_download,
-            args=(url, out_dir, quality, cookie, concurrency,
-                  cookie_browser, use_aria2),
+            args=(url, out_dir, quality, cookie, concurrency, cookie_browser),
             daemon=True,
         )
         self._thread.start()
@@ -982,7 +963,7 @@ class App(tk.Tk):
         return holder["result"]
 
     def _do_download(self, url, out_dir, quality_label, cookie_file, concurrency=3,
-                     cookie_browser="不使用", use_aria2=False):
+                     cookie_browser="不使用"):
         site = detect_site(url)
 
         # 抖音用户主页 → Playwright 批量下载
@@ -1050,20 +1031,6 @@ class App(tk.Tk):
             self._log(f"从浏览器自动获取 Cookie：{cookie_browser}")
         elif cookie_file and os.path.exists(cookie_file):
             opts["cookiefile"] = cookie_file
-        # aria2c 多线程分段下载（仅直连 http/https；分片流 HLS/DASH 仍用原生并发分片）
-        # B站例外：其原生下载已较快，且 aria2c 对 B站 PCDN 兼容差、会反复写临时 cookie，
-        # 故 B站不启用 aria2c，改用原生（更稳、不再每集写 cookie）。
-        if use_aria2 and self._aria2c_path and site != "bilibili":
-            opts["external_downloader"] = {"http": self._aria2c_path,
-                                           "https": self._aria2c_path}
-            opts["external_downloader_args"] = {
-                "aria2c": ["-x", "16", "-s", "16", "-k", "1M",
-                           "--max-connection-per-server=16",
-                           "--console-log-level=warn", "--summary-interval=0"],
-            }
-            self._log("⚡ 极速下载已启用（aria2c 多线程分段）")
-        elif use_aria2 and self._aria2c_path and site == "bilibili":
-            self._log("ℹ B站改用原生下载（更稳、不再每集重复加载 Cookie）；aria2c 仅用于抖音等直连。")
         if site == "bilibili":
             opts.setdefault("extractor_args", {})["bilibili"] = {"prefer_multi_flv": ["false"]}
             has_cookie = (cookie_browser and cookie_browser != "不使用") or \
