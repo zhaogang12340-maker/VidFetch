@@ -421,17 +421,18 @@ def preprocess_url(url):
     from_tab_name= 等），都剥离参数还原成纯主页地址，用于批量下载
     该博主的全部视频。
     """
+    # 抖音弹窗式打开的单个视频：modal_id 在任何页面（精选/发现/首页/博主页）都代表
+    # 点开了某个具体视频，优先级最高 → 规范化为 douyin.com/video/<id> 下载该单条。
+    # 注意：必须先于 /user/ 判断，否则 /user/self?modal_id=… 会被误当成博主批量。
+    if "douyin.com" in url.lower():
+        m_modal = re.search(r'[?&]modal_id=(\d+)', url)
+        if m_modal:
+            return f"https://www.douyin.com/video/{m_modal.group(1)}"
     # 抖音博主主页：提取 sec_uid，丢弃所有查询参数 → 批量下载全部作品
     m_user = re.search(r'douyin\.com/user/([^?&/]+)', url)
     if m_user:
         sec_uid = m_user.group(1)
         return f"https://www.douyin.com/user/{sec_uid}"
-    # 抖音「精选/发现/首页」里以弹窗形式打开的视频：真正的视频 ID 在 modal_id 参数中
-    # 例如 douyin.com/jingxuan?modal_id=123 → 规范化为 douyin.com/video/123
-    if "douyin.com" in url.lower():
-        m_modal = re.search(r'[?&]modal_id=(\d+)', url)
-        if m_modal:
-            return f"https://www.douyin.com/video/{m_modal.group(1)}"
     return url
 
 
