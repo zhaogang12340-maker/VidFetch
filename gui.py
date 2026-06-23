@@ -869,6 +869,53 @@ class App(tk.Tk):
         self._set_status("正在停止...")
         self._log("⏹ 正在停止...")
 
+    # ── 单实例 / 浏览器扩展 入口 ─────────────────────────────────────────
+    def _start_single_instance_server(self):
+        """绑定本地回环端口作为单实例标志；成功则起监听线程接收转发的下载地址。
+        返回 True=本进程是首个实例；False=已有实例在运行。"""
+        import socket
+        try:
+            srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            srv.bind((_SINGLE_HOST, _SINGLE_PORT))
+            srv.listen(5)
+        except OSError:
+            return False
+        self._single_srv = srv
+
+        def _loop():
+            while True:
+                try:
+                    conn, _ = srv.accept()
+                    buf = conn.recv(8192).decode("utf-8", "replace")
+                    conn.close()
+                    for line in buf.splitlines():
+                        if line.startswith("ADD "):
+                            u = line[4:].strip()
+                            if u:
+                                self.after(0, lambda u=u: self._add_url(u))
+                except Exception:
+                    break
+        threading.Thread(target=_loop, daemon=True).start()
+        return True
+
+    def _add_url(self, url):
+        """收到（扩展或第二实例转发来的）下载地址：填入并自动开始下载，并把窗口提到前台。"""
+        try:
+            self.url_var.set(url)
+            self._log(f"\n▶ 收到下载请求：{url}")
+            try:
+                self.deiconify()
+            except Exception:
+                pass
+            self.lift()
+            self.focus_force()
+            if self._thread and self._thread.is_alive():
+                self._log("（当前已有下载在进行，地址已填入，等完成后点“下载”即可）")
+                return
+            self._start_download()
+        except Exception as e:
+            self._log(f"[错误] 处理下载请求失败：{e}")
+
     # ── 下载 ─────────────────────────────────────────────────────────────
     def _start_download(self):
         url = preprocess_url("".join(self.url_var.get().split()))
@@ -1366,9 +1413,41 @@ class App(tk.Tk):
             self._set_progress(99)
 
 
+# 单实例通信：浏览器扩展/第二个实例把下载地址转发给正在运行的窗口（仅本机回环）
+_SINGLE_HOST = "127.0.0.1"
+_SINGLE_PORT = 47923
+
+
+def _forward_url_if_running(url):
+    """若已有 VidFetch 在运行，把 url 转发过去并返回 True；否则返回 False。"""
+    import socket
+    try:
+        s = socket.create_connection((_SINGLE_HOST, _SINGLE_PORT), timeout=1.0)
+        s.sendall(("ADD " + url + "\n").encode("utf-8"))
+        s.close()
+        return True
+    except Exception:
+        return False
+
+
 if __name__ == "__main__":
+    _argv = sys.argv[1:]
+    _url = None
+    if "--url" in _argv:
+        _i = _argv.index("--url")
+        if _i + 1 < len(_argv):
+            _url = _argv[_i + 1].strip()
+    # 已有实例在跑 → 转发地址后直接退出，避免开多个窗口
+    if _url and _forward_url_if_running(_url):
+        sys.exit(0)
     try:
         app = App()
+        if not app._start_single_instance_server():   # 绑定失败=已有实例（竞态），再转发
+            if _url and _forward_url_if_running(_url):
+                app.destroy()
+                sys.exit(0)
+        if _url:
+            app.after(600, lambda: app._add_url(_url))
         app.mainloop()
     except Exception as _e:
         import traceback, datetime

@@ -20,6 +20,7 @@
 | 登录态下载 | 通过 Cookie 文件下载会员 / 高清 / 需登录内容 | ✅ |
 | 自动安装 ffmpeg | 首次运行若缺 ffmpeg 会自动下载 | ✅ |
 | 免安装 EXE | 单文件可执行,拷到任意 Windows 电脑即用 | ✅ |
+| 浏览器右键下载 | Chrome / Edge 扩展,视频页右键「用 VidFetch 下载」自动下载 | ✅ |
 
 ### 清晰度档位
 
@@ -171,6 +172,28 @@ python douyin_user_playwright.py --url "https://www.douyin.com/user/XXXX" \
 5. 整个收集过程通常几十秒到一两分钟（视频越多越久），**耐心等待即可**
 
 > 💡 如果手动操作了那个浏览器（比如滚动、点击、关闭），可能导致收集中断或不全。让它自己跑完就好。
+
+---
+
+## ★ 浏览器扩展（Chrome / Edge 右键下载）
+
+在浏览器视频页面**右键 →「用 VidFetch 下载此视频」**，即可调用本地 VidFetch 自动下载，无需手动复制链接。
+
+### 原理（Native Messaging，不经应用商店）
+```
+视频页右键 → 扩展(MV3) → 本地宿主 vidfetch_host.exe → 启动 VidFetch.exe --url <地址> → 自动下载
+```
+- 扩展只负责把「当前页面地址」交给本地 VidFetch（真正的解析/下载仍由 yt-dlp 完成）。
+- VidFetch 单实例：再次触发会把地址转发给已打开的窗口（仅本机 `127.0.0.1`，不对外）。
+
+### 安装（手动加载，三步）
+1. 解压扩展包，双击 **`install_extension.bat`** 注册宿主（写当前用户注册表，无需管理员）。
+2. Chrome/Edge → 扩展页 → 开**开发者模式** → **加载已解压的扩展** → 选 `browser_extension` 文件夹。
+3. 打开视频页 → 右键 →「用 VidFetch 下载此视频」。
+
+> 详细步骤与常见问题见 **[README_extension.md](README_extension.md)**。
+> 扩展相关文件位于仓库 `browser_extension/`、`host.py`、`install_extension.*`。
+> 未上架 Chrome/Edge 商店（视频下载类审核易被拒），采用手动加载分发。
 
 ---
 

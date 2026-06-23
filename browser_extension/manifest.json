@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "VidFetch 下载助手",
+  "version": "1.0.0",
+  "description": "在视频页面右键，调用本地 VidFetch 下载当前视频。",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuE0qKfC2PZS1qLgCgmAoLA7iCxb9GXmxdr4Ef2MCdZ+n0vlGkay3mtlrai7hmy05fouvIdi76RWQpui2ECEUHbfN0147xVMRz+51UZuU9PE7CvGk0ZxtxWw5FylqWqzz2n5H7ETaxhL1vIC4t+sLBuDC5FkSxlbg9pKK6zSpNEvbKcOyhRhmixIFrlPvFHG+Q8e2J+bFKnT7b6OefuM9RGBQ0Tb6wozCnynKZblg34szNyVz5Cpbf30ONwavnL5lflZpItEW1vND7OXPf9IywT89kYD48PRdK0JGQ2qvieE8d/7L8PXWSOzSGZ+2TZNaCc7U7be8+9IHPYaKhJdClQIDAQAB",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "contextMenus",
+    "nativeMessaging",
+    "notifications"
+  ]
+}

@@ -15,7 +15,9 @@ downloaded_archive*.txt
 
 # ===== 构建产物 =====
 build/
+build_host/
 dist/
+_release/
 *.exe
 *.spec
 __pycache__/
@@ -26,6 +28,9 @@ __pycache__/
 playlist_test.json
 out.txt
 err.txt
+build_log*.txt
+build_host_log.txt
+*_分析报告.md
 debug_*.py
 *_debug*.py
 export_*.py
@@ -34,3 +39,14 @@ test_*.py
 douyin_favorites.py
 
 # 注：免安装 EXE 不放进 git 历史，改作为 GitHub Release 资源上传
+
+# ===== 浏览器扩展 =====
+# 扩展图标需纳入版本库（覆盖上面的 *.png 排除）
+!browser_extension/icons/
+!browser_extension/icons/*.png
+# 扩展签名私钥与生成 ID 用的临时文件，不上传
+ext_signing_key.pem
+browser_extension/_*.b64
+browser_extension/_*.txt
+# 安装脚本生成的宿主清单（含本机绝对路径，由 install 脚本生成，不入库）
+com.vidfetch.host.json
