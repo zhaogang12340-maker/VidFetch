@@ -17,6 +17,12 @@ if sys.stderr and hasattr(sys.stderr, "buffer"):
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+import customtkinter as ctk
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("dark-blue")
+# 固定缩放为 1.0：避免随系统 DPI 把窗口撑大到超出屏幕（保持清晰、尺寸可预期）
+ctk.set_window_scaling(1.0)
+ctk.set_widget_scaling(1.0)
 import yt_dlp
 try:
     # 在进度钩子里抛出它可中止 yt-dlp 下载，且不会被 ignoreerrors 吞掉
@@ -93,7 +99,7 @@ class PatchedYDL(yt_dlp.YoutubeDL):
         return super().urlopen(req)
 
 # ── 版本号 ────────────────────────────────────────────────────────────────
-VERSION = "1.07"
+VERSION = "1.08"
 
 # ── 颜色 / 字体常量 ───────────────────────────────────────────────────────
 BG    = "#1e1e2e"
@@ -539,13 +545,12 @@ class GUILogger:
 
 
 # ── 主窗口 ────────────────────────────────────────────────────────────────
-class App(tk.Tk):
+class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(f"VidFetch视频下载工具 v{VERSION}")
-        self.resizable(True, True)
-        self.configure(bg=BG)
-        self.minsize(520, 480)
+        self.geometry("600x720")
+        self.minsize(540, 560)
 
         self._ffmpeg_path = find_ffmpeg()
         self._thread = None
@@ -562,190 +567,151 @@ class App(tk.Tk):
 
     def _center(self):
         self.update_idletasks()
-        w = max(self.winfo_width(), 560)
-        h = self.winfo_height()
+        w, h = 600, 720
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        self.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+        x = max(0, (sw - w) // 2)
+        y = max(0, (sh - h) // 2 - 20)
+        self.geometry(f"{w}x{h}+{x}+{y}")
 
     # ── UI ───────────────────────────────────────────────────────────────
     def _build_ui(self):
-        # 标题栏
-        hdr = tk.Frame(self, bg=ACC, pady=10)
-        hdr.pack(fill="x")
-        tk.Label(hdr, text="  VidFetch视频下载工具", font=("微软雅黑", 14, "bold"),
-                 bg=ACC, fg="white").pack(side="left")
-        tk.Label(hdr, text=f"v{VERSION} ", font=FONT_S,
-                 bg=ACC, fg="white").pack(side="left", anchor="s", pady=(0, 2))
-        tk.Label(hdr, text="Bilibili · 抖音 · YouTube · 腾讯视频 · 爱奇艺  ", font=FONT_S,
-                 bg=ACC, fg="#ddd").pack(side="right")
+        PURPLE, PURPLE_H = "#7c6af7", "#6a5ce6"
+        GREY, GREY_H, REDH = "#3a3a4a", "#4a4a5e", "#c0504d"
+        DIMC = "#9a9ab0"
 
-        body = tk.Frame(self, bg=BG, padx=20, pady=16)
-        body.pack(fill="both", expand=True)
+        def F(sz=13, bold=False):
+            return ctk.CTkFont("微软雅黑", sz, "bold" if bold else "normal")
+
+        # 顶部标题栏
+        header = ctk.CTkFrame(self, fg_color=PURPLE, corner_radius=0, height=64)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        ctk.CTkLabel(header, text="VidFetch 视频下载工具", text_color="white",
+                     font=F(18, True)).pack(side="left", padx=(20, 8))
+        ctk.CTkLabel(header, text=f"v{VERSION}", text_color="#e6e0ff",
+                     font=F(12)).pack(side="left", pady=(6, 0))
+        ctk.CTkLabel(header, text="Bilibili · 抖音 · YouTube · 腾讯 · 爱奇艺",
+                     text_color="#ddd6ff", font=F(11)).pack(side="right", padx=20)
+
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=18, pady=14)
         body.columnconfigure(0, weight=1)
-        body.rowconfigure(14, weight=1)
+        r = 0
 
-        def lbl(text, row, pady=(0, 4)):
-            tk.Label(body, text=text, font=FONT, bg=BG, fg=DIM,
-                     anchor="w").grid(row=row, column=0, sticky="w", pady=pady)
-
-        def card_entry(row, var, width=50, show_paste=False, show_browse=False,
-                       browse_cmd=None, browse_label="浏览", is_dir=False):
-            f = tk.Frame(body, bg=CARD, highlightbackground="#444458",
-                         highlightthickness=1)
-            f.grid(row=row, column=0, sticky="ew", pady=(0, 12))
-            f.columnconfigure(0, weight=1)
-            e = tk.Entry(f, textvariable=var, font=FONT, bg=CARD, fg=FG,
-                         insertbackground=FG, relief="flat", bd=8)
-            e.grid(row=0, column=0, sticky="ew")
-            col = 1
-            if show_paste:
-                tk.Button(f, text="粘贴", font=FONT_S, bg=ACC, fg="white",
-                          relief="flat", bd=0, padx=8, cursor="hand2",
-                          command=self._paste_url).grid(row=0, column=col, padx=(0,4), pady=4)
-                col += 1
-            if show_browse:
-                tk.Button(f, text=browse_label, font=FONT_S, bg="#444458", fg=FG,
-                          relief="flat", bd=0, padx=8, cursor="hand2",
-                          command=browse_cmd).grid(row=0, column=col, padx=(0,4), pady=4)
-            return f
+        def section(text, pady=(0, 4)):
+            nonlocal r
+            ctk.CTkLabel(body, text=text, anchor="w", text_color=DIMC,
+                         font=F(12)).grid(row=r, column=0, sticky="w", pady=pady)
+            r += 1
 
         # 视频链接
-        lbl("视频链接", 0)
+        section("视频链接")
+        urlrow = ctk.CTkFrame(body, fg_color="transparent")
+        urlrow.grid(row=r, column=0, sticky="ew", pady=(0, 12)); r += 1
+        urlrow.columnconfigure(0, weight=1)
         self.url_var = tk.StringVar()
-        card_entry(1, self.url_var, show_paste=True)
+        ctk.CTkEntry(urlrow, textvariable=self.url_var, font=F(13), height=34,
+                     placeholder_text="粘贴视频或博主主页链接").grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(urlrow, text="粘贴", width=64, height=34, font=F(12),
+                      fg_color=PURPLE, hover_color=PURPLE_H,
+                      command=self._paste_url).grid(row=0, column=1, padx=(8, 0))
 
-        # 清晰度 + 同时下载数量
-        lbl("清晰度  /  同时下载数量（批量时生效）", 2)
+        # 清晰度 + 并发
+        section("清晰度  /  同时下载数量（批量时生效）")
+        qrow = ctk.CTkFrame(body, fg_color="transparent")
+        qrow.grid(row=r, column=0, sticky="ew", pady=(0, 12)); r += 1
+        qrow.columnconfigure(0, weight=1)
         self.quality_var = tk.StringVar(value=list(QUALITIES.keys())[0])
         self.concurrency_var = tk.StringVar(value="3")
-        qf = tk.Frame(body, bg=CARD, highlightbackground="#444458", highlightthickness=1)
-        qf.grid(row=3, column=0, sticky="ew", pady=(0, 12))
-        qf.columnconfigure(0, weight=1)
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("Dark.TCombobox",
-                        fieldbackground=CARD, background=CARD,
-                        foreground=FG, selectbackground=ACC,
-                        selectforeground="white", arrowcolor=FG,
-                        bordercolor=CARD, lightcolor=CARD, darkcolor=CARD)
-        # readonly 状态下 ttk 用「选中色」绘制当前值，必须为该状态显式映射颜色，
-        # 否则深色主题下文字与背景同色，导致选了值却看不见
-        style.map("Dark.TCombobox",
-                  fieldbackground=[("readonly", CARD), ("disabled", CARD)],
-                  foreground=[("readonly", FG), ("disabled", DIM)],
-                  selectbackground=[("readonly", CARD)],
-                  selectforeground=[("readonly", FG)],
-                  background=[("readonly", CARD)],
-                  arrowcolor=[("readonly", FG)])
-        # 下拉弹出列表（独立 Listbox，不受 TCombobox 样式控制）配色
-        self.option_add("*TCombobox*Listbox.background", CARD)
-        self.option_add("*TCombobox*Listbox.foreground", FG)
-        self.option_add("*TCombobox*Listbox.selectBackground", ACC)
-        self.option_add("*TCombobox*Listbox.selectForeground", "white")
-        ttk.Combobox(qf, textvariable=self.quality_var,
-                     values=list(QUALITIES.keys()), state="readonly",
-                     font=FONT, style="Dark.TCombobox").grid(
-                         row=0, column=0, sticky="ew", padx=8, pady=6)
-        ttk.Combobox(qf, textvariable=self.concurrency_var,
-                     values=["1", "2", "3", "4", "5"], state="readonly",
-                     width=4, font=FONT, style="Dark.TCombobox").grid(
-                         row=0, column=1, sticky="e", padx=(0, 8), pady=6)
+        ctk.CTkOptionMenu(qrow, variable=self.quality_var, values=list(QUALITIES.keys()),
+                          font=F(13), height=34, fg_color=GREY, button_color=PURPLE,
+                          button_hover_color=PURPLE_H).grid(row=0, column=0, sticky="ew")
+        ctk.CTkOptionMenu(qrow, variable=self.concurrency_var, values=["1", "2", "3", "4", "5"],
+                          width=82, font=F(13), height=34, fg_color=GREY, button_color=PURPLE,
+                          button_hover_color=PURPLE_H).grid(row=0, column=1, padx=(8, 0))
 
         # 保存目录
-        lbl("保存目录", 4)
+        section("保存目录")
+        dirrow = ctk.CTkFrame(body, fg_color="transparent")
+        dirrow.grid(row=r, column=0, sticky="ew", pady=(0, 12)); r += 1
+        dirrow.columnconfigure(0, weight=1)
         self.dir_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Videos", "Downloaded"))
-        card_entry(5, self.dir_var, show_browse=True,
-                   browse_cmd=self._browse_dir, browse_label="浏览")
+        ctk.CTkEntry(dirrow, textvariable=self.dir_var, font=F(13), height=34).grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(dirrow, text="浏览", width=64, height=34, font=F(12),
+                      fg_color=GREY, hover_color=GREY_H,
+                      command=self._browse_dir).grid(row=0, column=1, padx=(8, 0))
 
-        # Cookie 文件（可选）
-        lbl("Cookie（可选，仅需登录的视频才用）：手动选文件，或下方从浏览器自动获取", 6)
+        # Cookie 文件
+        section("Cookie（可选，仅需登录的视频才用）")
+        ckrow = ctk.CTkFrame(body, fg_color="transparent")
+        ckrow.grid(row=r, column=0, sticky="ew", pady=(0, 8)); r += 1
+        ckrow.columnconfigure(0, weight=1)
         self.cookie_var = tk.StringVar()
-        card_entry(7, self.cookie_var, show_browse=True,
-                   browse_cmd=self._browse_cookie, browse_label="选择")
+        ctk.CTkEntry(ckrow, textvariable=self.cookie_var, font=F(13), height=34,
+                     placeholder_text="手动选择 cookies.txt（或下方从浏览器获取）").grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(ckrow, text="选择", width=64, height=34, font=F(12),
+                      fg_color=GREY, hover_color=GREY_H,
+                      command=self._browse_cookie).grid(row=0, column=1, padx=(8, 0))
 
-        # 浏览器自动取 Cookie + 极速下载
-        srcrow = tk.Frame(body, bg=BG)
-        srcrow.grid(row=8, column=0, sticky="ew", pady=(0, 12))
-        tk.Label(srcrow, text="从浏览器自动获取 Cookie:", font=FONT_S,
-                 bg=BG, fg=DIM).grid(row=0, column=0, padx=(0, 6))
+        # 浏览器取 Cookie
+        brow = ctk.CTkFrame(body, fg_color="transparent")
+        brow.grid(row=r, column=0, sticky="w", pady=(0, 10)); r += 1
+        ctk.CTkLabel(brow, text="从浏览器自动获取 Cookie:", text_color=DIMC,
+                     font=F(12)).pack(side="left", padx=(0, 8))
         self.cookie_browser_var = tk.StringVar(value="不使用")
-        ttk.Combobox(srcrow, textvariable=self.cookie_browser_var,
-                     values=["不使用", "Chrome", "Edge", "Firefox", "Brave"],
-                     state="readonly", width=9, font=FONT,
-                     style="Dark.TCombobox").grid(row=0, column=1, padx=(0, 18))
+        ctk.CTkOptionMenu(brow, variable=self.cookie_browser_var,
+                          values=["不使用", "Chrome", "Edge", "Firefox", "Brave"],
+                          width=120, font=F(12), height=32, fg_color=GREY,
+                          button_color=PURPLE, button_hover_color=PURPLE_H).pack(side="left")
 
         # ffmpeg 状态
         self.ffmpeg_var = tk.StringVar()
-        self._ffmpeg_label = tk.Label(body, textvariable=self.ffmpeg_var,
-                                      font=FONT_S, bg=BG, anchor="w")
-        self._ffmpeg_label.grid(row=9, column=0, sticky="w", pady=(0, 8))
+        self._ffmpeg_label = ctk.CTkLabel(body, textvariable=self.ffmpeg_var, anchor="w", font=F(12))
+        self._ffmpeg_label.grid(row=r, column=0, sticky="w", pady=(0, 8)); r += 1
         self._update_ffmpeg_label()
 
-        # 下载 / 暂停 / 停止 按钮
-        btnrow = tk.Frame(body, bg=BG)
-        btnrow.grid(row=10, column=0, sticky="ew", pady=(0, 12))
+        # 下载 / 暂停 / 停止
+        btnrow = ctk.CTkFrame(body, fg_color="transparent")
+        btnrow.grid(row=r, column=0, sticky="ew", pady=(0, 12)); r += 1
         btnrow.columnconfigure(0, weight=3)
         btnrow.columnconfigure(1, weight=1)
         btnrow.columnconfigure(2, weight=1)
-        self.btn = tk.Button(btnrow, text="下  载",
-                             font=("微软雅黑", 12, "bold"),
-                             bg=ACC, fg="white", relief="flat", bd=0,
-                             pady=10, cursor="hand2",
-                             activebackground="#6a5ce6", activeforeground="white",
-                             command=self._start_download)
+        self.btn = ctk.CTkButton(btnrow, text="下  载", height=40, font=F(15, True),
+                                 fg_color=PURPLE, hover_color=PURPLE_H, command=self._start_download)
         self.btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        self.pause_btn = tk.Button(btnrow, text="暂停",
-                                   font=("微软雅黑", 11, "bold"),
-                                   bg="#555568", fg="white", relief="flat", bd=0,
-                                   pady=10, cursor="hand2", state="disabled",
-                                   activebackground="#6a6a7e", activeforeground="white",
-                                   command=self._toggle_pause)
+        self.pause_btn = ctk.CTkButton(btnrow, text="暂停", height=40, font=F(13, True),
+                                       fg_color=GREY, hover_color=GREY_H, state="disabled",
+                                       command=self._toggle_pause)
         self.pause_btn.grid(row=0, column=1, sticky="ew", padx=3)
-        self.stop_btn = tk.Button(btnrow, text="停止",
-                                  font=("微软雅黑", 11, "bold"),
-                                  bg="#555568", fg="white", relief="flat", bd=0,
-                                  pady=10, cursor="hand2", state="disabled",
-                                  activebackground="#c0504d", activeforeground="white",
-                                  command=self._stop_download)
+        self.stop_btn = ctk.CTkButton(btnrow, text="停止", height=40, font=F(13, True),
+                                      fg_color=GREY, hover_color=REDH, state="disabled",
+                                      command=self._stop_download)
         self.stop_btn.grid(row=0, column=2, sticky="ew", padx=(6, 0))
 
-        # 进度条
-        pb_style = ttk.Style()
-        pb_style.configure("Acc.Horizontal.TProgressbar",
-                           troughcolor=CARD, background=ACC,
-                           bordercolor=CARD, lightcolor=ACC, darkcolor=ACC)
-        self.progress = ttk.Progressbar(body, style="Acc.Horizontal.TProgressbar",
-                                        mode="determinate", maximum=100)
-        self.progress.grid(row=11, column=0, sticky="ew", pady=(0, 4))
-
+        # 进度条 + 状态
+        self.progress = ctk.CTkProgressBar(body, height=14, progress_color=PURPLE)
+        self.progress.grid(row=r, column=0, sticky="ew", pady=(2, 4)); r += 1
+        self.progress.set(0)
         self.status_var = tk.StringVar(value="就绪")
-        tk.Label(body, textvariable=self.status_var, font=FONT_S,
-                 bg=BG, fg=DIM, anchor="w").grid(row=12, column=0, sticky="w")
+        ctk.CTkLabel(body, textvariable=self.status_var, anchor="w", text_color=DIMC,
+                     font=F(12)).grid(row=r, column=0, sticky="w"); r += 1
 
         # 日志
-        tk.Label(body, text="下载日志", font=FONT_S, bg=BG, fg=DIM,
-                 anchor="w").grid(row=13, column=0, sticky="w", pady=(10, 4))
-        log_outer = tk.Frame(body, bg=CARD, highlightbackground="#444458",
-                             highlightthickness=1)
-        log_outer.grid(row=14, column=0, sticky="nsew", pady=(0, 4))
-        log_outer.columnconfigure(0, weight=1)
-        log_outer.rowconfigure(0, weight=1)
-        self.log_text = tk.Text(log_outer, font=FONT_LOG, bg="#12121e", fg="#c0c0d0",
-                                relief="flat", bd=8, height=10, wrap="word",
-                                state="disabled", cursor="arrow")
-        sb = tk.Scrollbar(log_outer, command=self.log_text.yview,
-                          bg=CARD, troughcolor=CARD, relief="flat")
-        self.log_text.configure(yscrollcommand=sb.set)
-        sb.grid(row=0, column=1, sticky="ns")
-        self.log_text.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
+        ctk.CTkLabel(body, text="下载日志", anchor="w", text_color=DIMC,
+                     font=F(12)).grid(row=r, column=0, sticky="w", pady=(8, 4)); r += 1
+        body.rowconfigure(r, weight=1)
+        self.log_text = ctk.CTkTextbox(body, font=("Consolas", 12), fg_color="#15151f",
+                                       text_color="#c8c8da", wrap="word")
+        self.log_text.grid(row=r, column=0, sticky="nsew")
+        self.log_text.configure(state="disabled")
 
     def _update_ffmpeg_label(self):
         if self._ffmpeg_path:
-            self.ffmpeg_var.set(f"✓ ffmpeg 已就绪")
-            self._ffmpeg_label.configure(fg=GREEN)
+            self.ffmpeg_var.set("✓ ffmpeg 已就绪")
+            self._ffmpeg_label.configure(text_color=GREEN)
         else:
             self.ffmpeg_var.set("✗ 未检测到 ffmpeg（点击下载按钮后将自动安装）")
-            self._ffmpeg_label.configure(fg=RED)
+            self._ffmpeg_label.configure(text_color=RED)
 
     # ── 操作 ─────────────────────────────────────────────────────────────
     def _paste_url(self):
@@ -781,7 +747,7 @@ class App(tk.Tk):
         def _run():
             try:
                 path = download_ffmpeg(
-                    progress_cb=lambda p: self.after(0, lambda: self.progress.configure(value=p)),
+                    progress_cb=lambda p: self.after(0, lambda: self.progress.set(max(0.0, min(1.0, p / 100.0)))),
                     log_cb=self._log,
                 )
                 self._ffmpeg_path = path
@@ -795,7 +761,7 @@ class App(tk.Tk):
                 ))
             finally:
                 self._set_btn(True)
-                self.after(0, lambda: self.progress.configure(value=0))
+                self.after(0, lambda: self.progress.set(0))
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -808,7 +774,7 @@ class App(tk.Tk):
         self.after(0, _upd)
 
     def _set_progress(self, pct):
-        self.after(0, lambda: self.progress.configure(value=pct))
+        self.after(0, lambda: self.progress.set(max(0.0, min(1.0, pct / 100.0))))
 
     def _set_status(self, msg):
         self.after(0, lambda: self.status_var.set(msg))
@@ -818,12 +784,9 @@ class App(tk.Tk):
         def _upd():
             self.btn.configure(
                 state="normal" if enabled else "disabled",
-                bg=ACC if enabled else "#555568",
-                text="下  载" if enabled else "下载中...",
-            )
+                text="下  载" if enabled else "下载中...")
             self.pause_btn.configure(
-                state="disabled" if enabled else "normal",
-                text="暂停")
+                state="disabled" if enabled else "normal", text="暂停")
             self.stop_btn.configure(
                 state="disabled" if enabled else "normal")
         self.after(0, _upd)
@@ -942,7 +905,7 @@ class App(tk.Tk):
         self._stop_event.clear()
         self._pause_event.set()
         self._set_btn(False)
-        self.progress.configure(value=0)
+        self.progress.set(0)
         self._set_status("准备中...")
         raw_url = "".join(self.url_var.get().split())
         self._log(f"\n{'─'*48}")
@@ -992,37 +955,23 @@ class App(tk.Tk):
         done = threading.Event()
 
         def _show():
-            win = tk.Toplevel(self)
+            FF = lambda sz=12, b=False: ctk.CTkFont("微软雅黑", sz, "bold" if b else "normal")
+            win = ctk.CTkToplevel(self)
             win.title("选择要下载的分集")
-            win.configure(bg=BG)
+            win.geometry("540x480")
             win.transient(self)
-            win.grab_set()
-            tk.Label(win, text=f"共 {len(parts)} 个分集，默认全选；取消勾选不想下载的：",
-                     font=FONT, bg=BG, fg=FG).pack(anchor="w", padx=12, pady=(12, 6))
-            outer = tk.Frame(win, bg=CARD, highlightbackground="#444458", highlightthickness=1)
-            outer.pack(fill="both", expand=True, padx=12)
-            canvas = tk.Canvas(outer, bg=CARD, highlightthickness=0, height=320, width=470)
-            sb = tk.Scrollbar(outer, command=canvas.yview)
-            inner = tk.Frame(canvas, bg=CARD)
-            canvas.configure(yscrollcommand=sb.set)
-            canvas.pack(side="left", fill="both", expand=True)
-            sb.pack(side="right", fill="y")
-            cw = canvas.create_window((0, 0), window=inner, anchor="nw")
-            inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-            canvas.bind("<Configure>", lambda e: canvas.itemconfig(cw, width=e.width))
+            win.after(200, lambda: win.grab_set())   # CTkToplevel 需稍延迟再 grab
+            ctk.CTkLabel(win, text=f"共 {len(parts)} 个分集，默认全选；取消勾选不想下载的：",
+                         font=FF(13), anchor="w").pack(anchor="w", padx=16, pady=(14, 6))
+            scroll = ctk.CTkScrollableFrame(win, fg_color="#2a2a3e")
+            scroll.pack(fill="both", expand=True, padx=16)
             vars_ = []
             for page, title in parts:
                 v = tk.BooleanVar(value=True)
                 vars_.append((page, v))
-                tk.Checkbutton(inner, text=f"P{page}　{title}", variable=v,
-                               font=FONT_S, bg=CARD, fg=FG, selectcolor=BG,
-                               activebackground=CARD, activeforeground=FG,
-                               anchor="w", highlightthickness=0, bd=0,
-                               wraplength=430, justify="left").pack(fill="x", anchor="w", padx=6, pady=1)
-
-            def _wheel(e):
-                canvas.yview_scroll(int(-e.delta / 120), "units")
-            canvas.bind_all("<MouseWheel>", _wheel)
+                ctk.CTkCheckBox(scroll, text=f"P{page}  {title}", variable=v,
+                                font=FF(12), fg_color="#7c6af7",
+                                hover_color="#6a5ce6").pack(fill="x", anchor="w", pady=4)
 
             def _set_all(val):
                 for _, v in vars_:
@@ -1030,24 +979,20 @@ class App(tk.Tk):
 
             def _finish(result):
                 holder["result"] = result
-                try:
-                    canvas.unbind_all("<MouseWheel>")
-                except Exception:
-                    pass
                 win.destroy()
                 done.set()
 
-            bar = tk.Frame(win, bg=BG)
-            bar.pack(fill="x", padx=12, pady=10)
-            tk.Button(bar, text="全选", font=FONT_S, bg="#444458", fg=FG, relief="flat",
-                      bd=0, padx=10, pady=4, command=lambda: _set_all(True)).pack(side="left")
-            tk.Button(bar, text="全不选", font=FONT_S, bg="#444458", fg=FG, relief="flat",
-                      bd=0, padx=10, pady=4, command=lambda: _set_all(False)).pack(side="left", padx=6)
-            tk.Button(bar, text="取消", font=FONT_S, bg="#555568", fg="white", relief="flat",
-                      bd=0, padx=12, pady=4, command=lambda: _finish(None)).pack(side="right")
-            tk.Button(bar, text="开始下载", font=("微软雅黑", 10, "bold"), bg=ACC, fg="white",
-                      relief="flat", bd=0, padx=12, pady=4,
-                      command=lambda: _finish([pg for pg, v in vars_ if v.get()])).pack(side="right", padx=6)
+            bar = ctk.CTkFrame(win, fg_color="transparent")
+            bar.pack(fill="x", padx=16, pady=12)
+            ctk.CTkButton(bar, text="全选", width=64, font=FF(12), fg_color="#3a3a4a",
+                          hover_color="#4a4a5e", command=lambda: _set_all(True)).pack(side="left")
+            ctk.CTkButton(bar, text="全不选", width=64, font=FF(12), fg_color="#3a3a4a",
+                          hover_color="#4a4a5e", command=lambda: _set_all(False)).pack(side="left", padx=6)
+            ctk.CTkButton(bar, text="开始下载", font=FF(13, True), fg_color="#7c6af7",
+                          hover_color="#6a5ce6",
+                          command=lambda: _finish([pg for pg, v in vars_ if v.get()])).pack(side="right")
+            ctk.CTkButton(bar, text="取消", width=72, font=FF(12), fg_color="#555568",
+                          hover_color="#666677", command=lambda: _finish(None)).pack(side="right", padx=6)
             win.protocol("WM_DELETE_WINDOW", lambda: _finish(None))
 
         self.after(0, _show)
@@ -1140,7 +1085,7 @@ class App(tk.Tk):
             if code == 0:
                 self._log("✓ 下载完成！")
                 self._set_status("下载完成 ✓")
-                self.after(0, lambda: self.progress.configure(value=100))
+                self.after(0, lambda: self.progress.set(1.0))
             else:
                 self._log("下载遇到问题，请查看日志")
                 self._set_status("下载遇到问题")
@@ -1260,7 +1205,7 @@ class App(tk.Tk):
         else:
             self._log(f"\n✓ 全部完成！成功 {counters['ok']}，跳过 {counters['skipped']}，失败 {counters['failed']}（共 {total}）")
             self._set_status(f"完成：成功 {counters['ok']} / 共 {total}")
-            self.after(0, lambda: self.progress.configure(value=100))
+            self.after(0, lambda: self.progress.set(1.0))
         self._set_btn(True)
 
     def _download_douyin_video(self, cdn_url, base_path, height):
