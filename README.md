@@ -191,6 +191,8 @@ python douyin_user_playwright.py --url "https://www.douyin.com/user/XXXX" \
 2. Chrome/Edge → 扩展页 → 开**开发者模式** → **加载已解压的扩展** → 选 `browser_extension` 文件夹。
 3. 打开视频页 → 右键 →「用 VidFetch 下载此视频」。
 
+> **⚠️ 首次安装后请完全重启一次 Chrome / Edge**（MV3 后台脚本首次激活 + 新注册宿主的识别，都需要一次重启；只此一次，之后永久正常）。
+
 > 详细步骤与常见问题见 **[README_extension.md](README_extension.md)**。
 > 扩展相关文件位于仓库 `browser_extension/`、`host.py`、`install_extension.*`。
 > 未上架 Chrome/Edge 商店（视频下载类审核易被拒），采用手动加载分发。
