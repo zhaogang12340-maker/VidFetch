@@ -20,16 +20,19 @@
 
 | 功能 | 说明 | 已验证 |
 |---|---|---|
-| 单个视频下载 | 粘贴分享链接即可下载 | ✅ B站 / 抖音 |
+| 单个视频下载 | 粘贴分享链接即可下载 | ✅ B站 / 抖音 / YouTube |
 | 多清晰度选择 | 最高画质 / 4K / 1080p / 720p / 360p / 纯音频 MP3 | ✅ |
 | 文件名带清晰度 | 自动以**实际下载到的分辨率**命名,如 `标题_1080p.mp4` | ✅ |
 | 整季 / 合集下载 | B站番剧 `bangumi/media/mdXXXX`、UP主空间自动识别并批量 | ✅ B站 |
+| YouTube 频道 / 播放列表批量 | 粘贴频道主页(`@handle`)或播放列表,**弹窗勾选**要下的视频(默认全选) | ✅ YouTube |
 | 博主全部作品 | 抖音博主主页一键下载全部作品(绕过抖音反爬) | ✅ 抖音 |
+| 批量勾选下载 | B站多P/番剧/UP主、YouTube 频道/列表,下载前弹窗逐个勾选 | ✅ |
 | 并发下载 | 批量时可设置同时下载 1~5 个,加速 | ✅ |
 | 断点续传式跳过 | 已下载的自动跳过(不同清晰度互不影响) | ✅ |
 | 登录态下载 | 通过 Cookie 文件下载会员 / 高清 / 需登录内容 | ✅ |
-| 自动安装 ffmpeg | 首次运行若缺 ffmpeg 会自动下载 | ✅ |
+| 自动安装 ffmpeg / Deno | 首次运行若缺 ffmpeg(合并音视频)或 Deno(解析 YouTube)会自动下载 | ✅ |
 | 免安装 EXE | 单文件可执行,拷到任意 Windows 电脑即用 | ✅ |
+| 现代化界面 | 基于 customtkinter 的圆角浅色界面(暖米色主题) | ✅ |
 | 浏览器右键下载 | Chrome / Edge 扩展,视频页右键「用 VidFetch 下载」自动下载 | ✅ |
 
 ### 清晰度档位
@@ -85,6 +88,9 @@
 | B站番剧单集 `bilibili.com/bangumi/play/epXXXX` | 只下载该集 |
 | 抖音单个视频 `douyin.com/video/XXXX` | 下载该视频 |
 | 抖音博主主页 `douyin.com/user/XXXX`(参数随意) | 下载该博主**全部作品**(弹浏览器收集列表) |
+| YouTube 单个视频 `youtube.com/watch?v=XXXX` | 下载该视频(带 `list=` 也只下这一个) |
+| YouTube 频道主页 `youtube.com/@博主/videos` | **弹窗勾选**该频道视频后批量下载(默认全选) |
+| YouTube 播放列表 `youtube.com/playlist?list=XXXX` | **弹窗勾选**列表内视频后批量下载 |
 
 ### B. 命令行(开发者)
 
@@ -111,9 +117,9 @@ python douyin_user_playwright.py --url "https://www.douyin.com/user/XXXX" \
 
 ### 第 1 步：下载并打开 VidFetch
 
-1. 到本仓库的 **[Releases](../../releases)** 页面，下载 `VidFetch_v1.0.exe`
-2. 放到任意文件夹（如 `D:\VidFetch\`），**双击运行**（免安装，无需管理员权限）
-3. 首次打开会出现深色界面：视频链接、清晰度、保存目录、Cookie 文件、下载按钮
+1. 到本仓库的 **[Releases](../../releases)** 页面，下载最新版（要下 YouTube 选**完整版**，只下 B站/抖音可选体积更小的 **lite 精简版**），解压到任意文件夹（如 `D:\VidFetch\`）
+2. 双击 `VidFetch_v1.08.exe` **运行**（免安装，无需管理员权限）；同目录的 `deno.exe`、`ffmpeg/` 请一并保留
+3. 打开后是浅色现代化界面：视频链接、清晰度、保存目录、Cookie 文件、下载按钮；右上角会显示当前版本的「适用网站」
 
 > 💡 若 Windows 弹出「已保护你的电脑」蓝色提示，点 **更多信息 → 仍要运行**（因为 exe 未做数字签名，属正常现象）。
 
@@ -187,6 +193,17 @@ python douyin_user_playwright.py --url "https://www.douyin.com/user/XXXX" \
 
 ---
 
+## 六-B、YouTube 下载特别说明 ⚠️
+
+YouTube 自 2025 年起对视频地址加了 **JS「n 挑战 / 签名」保护**，必须用 **Deno** 运行时实时解算才能拿到真实播放地址，否则只会下到缩略图（日志报 `Only images are available` / `Requested format is not available`）。
+
+- **完整版**已内置 `deno.exe`，开箱即用。**精简版**首次下 YouTube 会**弹窗自动下载 Deno**（约 40 MB，只装一次，存到 exe 同级 `deno/`）。
+- **频道 / 播放列表**：粘贴 `youtube.com/@博主/videos` 或 `youtube.com/playlist?list=...`，点下载后会**先弹出勾选窗口**（默认全选，可「全选 / 全不选 / 逐个取消」），点「开始下载」才真正下。列表抓取上限约 500 条（取最新）。
+- **画质与 4K**：各档位优先选 **非 AV1 编码（VP9/H264）**。因为 YouTube 的 **AV1 高码流常需 PO Token、易 403 或卡 0 字节**；选「最高画质」会拿到最高的稳定可下格式（多为 VP9 4K）。4K 大文件受 YouTube 限速，速度偏慢且有波动，属正常现象。
+- **会员 / 年龄限制 / 私享内容**：需要 Cookie（见第二~四步），否则只能下公开内容。
+
+---
+
 ## ★ 浏览器扩展（Chrome / Edge 右键下载）
 
 在浏览器视频页面**右键 →「用 VidFetch 下载此视频」**，即可调用本地 VidFetch 自动下载，无需手动复制链接。
@@ -224,26 +241,43 @@ python douyin_user_playwright.py --url "https://www.douyin.com/user/XXXX" \
 ## 八、项目结构
 
 ```
-gui.py                          图形界面主程序(打包成 exe 的源码)
+gui.py                          图形界面主程序(打包成 exe 的源码,含 B站 PCDN 规避 / 抖音取址 / YouTube Deno 调度)
 downloader.py                   命令行下载器(B站/抖音单个/合集)
 douyin_user_playwright.py       抖音博主全部作品下载(Playwright)
 douyin_favorites_playwright.py  抖音收藏夹下载(Playwright)
+browser_extension/              Chrome/Edge 右键下载扩展(MV3)
+host.py                         扩展的 Native Messaging 宿主(打包成 vidfetch_host.exe)
+视频下载器.spec                  PyInstaller 打包配置
 requirements.txt                Python 依赖
-dist/VidFetch.exe              打包好的免安装程序
 ```
+
+> 发布包(zip)内除 `VidFetch_v1.08.exe` 外,完整版还附 `deno.exe`、`ffmpeg/`(精简版不含 deno)。
 
 ---
 
 ## 九、自行打包 EXE
 
+依赖里多了 **yt-dlp-ejs**(YouTube 求解器脚本),打包必须一并收进去,否则 exe 跑 YouTube 会失败:
+
 ```bash
-pyinstaller --onefile --windowed --name "VidFetch" ^
-  --collect-all yt_dlp --collect-all playwright --noconfirm gui.py
+pip install -r requirements.txt pyinstaller
+pyinstaller --noconfirm 视频下载器.spec
 ```
-产物在 `dist/VidFetch.exe`。
+
+`视频下载器.spec` 已配置 `collect_all('yt_dlp')` / `playwright` / `customtkinter` / `yt_dlp_ejs`,产物为 `dist/VidFetch_v1.08.exe`。打发布包时把 `deno.exe`(完整版)与 `ffmpeg/` 放到 exe 同目录再压缩即可。
 
 ---
 
-## 版本
+## 版本历史
 
-**v1.0**(首个版本)— 已验证:B站单个视频、抖音单个视频、B站多视频合集、抖音博主作品合集;含源码与免安装应用。
+### v1.08(当前)
+- **新增 YouTube 支持**:用 Deno + yt-dlp-ejs 解算 JS 挑战;频道/播放列表弹窗勾选批量下载;各档优先非 AV1 编码规避 4K 403。Deno 缺失时自动下载。
+- **界面现代化**:改用 customtkinter,圆角控件 + 暖米色浅色主题;右上角「适用网站」按版本(完整版/精简版)自动显示。
+- **发布两个版本**:完整版(B站/抖音/YouTube,自带 deno)与精简版 lite(B站/抖音,体积更小)。
+- 移除无效平台标注(腾讯/爱奇艺/央视频,DRM 或强反爬实测下不了)。
+
+### v1.07
+- 新增 Chrome/Edge 浏览器右键下载扩展(Native Messaging);B站 PCDN 在提取层用 yt-dlp 自身 backupUrl 替换,修复被企业防火墙拦的分集。
+
+### v1.06 及更早
+- B站 PCDN 规避、B站多P/番剧分集勾选、浏览器自动取 Cookie、停止/暂停、抖音博主/收藏夹批量、多清晰度与并发等(详见 git 提交历史)。
