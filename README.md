@@ -2,7 +2,17 @@
 
 一个**免安装**的 Windows 视频下载工具,带图形界面,支持按清晰度下载、批量下载整季/整个博主作品。基于 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 与 [Playwright](https://playwright.dev/)。
 
-支持平台:**Bilibili · 抖音 · YouTube · 腾讯视频 · 爱奇艺 · 央视频**(各平台支持程度见下表)。
+真实有效平台:**Bilibili · 抖音 · YouTube**。
+> 腾讯视频 / 爱奇艺 / 央视频多为 DRM 加密或强反爬,实测无法下载,故不再列为支持平台。
+
+### 两个发布版本
+
+| 版本 | 适用网站 | 体积 | 说明 |
+|---|---|---|---|
+| **完整版**(带 deno) | Bilibili · 抖音 · **YouTube** | 较大 | 自带 `deno.exe`,YouTube 开箱即用 |
+| **精简版**(lite,不带 deno) | Bilibili · 抖音 | 较小 | 不含 deno;首次下 YouTube 会弹窗自动下载 deno(约 40 MB) |
+
+> YouTube 必须有 deno 运行时来解析 JS 签名,完整版已内置。右上角「适用网站」会按当前版本自动显示。
 
 ---
 
@@ -40,6 +50,8 @@
 - **网络连接**
 - 浏览器(批量下载抖音博主时需要):自带 Chromium,或系统 **Edge**(Win10/11 预装)/ Chrome
 - ffmpeg:首次运行自动下载,无需手动安装
+- **Deno**(仅下载 **YouTube** 时需要):用于解析 YouTube 的 JS 签名挑战。发布包已自带 `deno.exe`;若缺失,首次下载 YouTube 时会**弹窗自动下载**(约 40 MB,只装一次)。
+  - 不下 YouTube 的用户(B站/抖音等)无需关心。
 
 ### 开发者(跑源码 / 打包)
 - **Python 3.12+**

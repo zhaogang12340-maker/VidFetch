@@ -18,7 +18,7 @@ if sys.stderr and hasattr(sys.stderr, "buffer"):
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import customtkinter as ctk
-ctk.set_appearance_mode("dark")
+ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("dark-blue")
 # 固定缩放为 1.0：避免随系统 DPI 把窗口撑大到超出屏幕（保持清晰、尺寸可预期）
 ctk.set_window_scaling(1.0)
@@ -107,8 +107,22 @@ CARD  = "#2a2a3e"
 ACC   = "#7c6af7"
 FG    = "#e0e0f0"
 DIM   = "#888898"
-GREEN = "#4ade80"
-RED   = "#f87171"
+GREEN = "#2e9e5b"
+RED   = "#cf5a4d"
+
+# ── 暖色浅色主题调色板 ──────────────────────────────────────────────
+BG          = "#f3ece1"   # 窗口背景（暖米色）
+FIELD       = "#ece3d4"   # 输入框 / 下拉框填充
+FIELD_BTN   = "#e3d9c6"   # 下拉框右侧箭头区
+FIELD_BD    = "#e0d5c2"   # 输入框边框
+CARD        = "#fdfaf4"   # 描边按钮 / 日志卡片（近白）
+CARD_H      = "#f0eadf"   # 描边按钮 hover
+BORDER      = "#e4dccd"   # 卡片边框
+TEXT        = "#3c3530"   # 主文字（深棕近黑）
+LABEL       = "#9b8e7b"   # 次级 / 标签文字
+ORANGE      = "#e08a4c"   # 主按钮（下载）
+ORANGE_H    = "#d27d3f"
+SITES       = "#d18a4a"   # 标题栏右侧站点列表
 _CJK = "微软雅黑"
 FONT_H  = (_CJK, 11, "bold")
 FONT    = (_CJK, 10)
@@ -120,6 +134,15 @@ FONT_LOG = ("Consolas", 9)
 FFMPEG_URL = (
     "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/"
     "latest/ffmpeg-master-latest-win64-gpl-shared.zip"
+)
+
+# ── Deno（YouTube JS 挑战求解器，yt-dlp 需要一个 JS 运行时来算 n 签名）─────────
+# YouTube 2025 起把视频地址用 JS「n 挑战/签名」保护，yt-dlp 必须调用 Deno 求解，
+# 否则只剩缩略图（报 "Only images are available" / "Requested format is not available"）。
+# yt-dlp 的 _find_exe 在冻结 exe 下会先查 exe 同目录、再查 PATH，所以放好 deno.exe 即可。
+DENO_URL = (
+    "https://github.com/denoland/deno/releases/latest/download/"
+    "deno-x86_64-pc-windows-msvc.zip"
 )
 
 def _exe_dir() -> str:
@@ -175,35 +198,97 @@ def download_ffmpeg(progress_cb=None, log_cb=None) -> str:
     return exe
 
 
+def find_deno() -> str | None:
+    """返回 deno.exe 路径，找不到返回 None。"""
+    # 1. exe 同目录直接放 deno.exe（yt-dlp 冻结态会自动找到，发布版推荐这样放）
+    direct = os.path.join(_exe_dir(), "deno.exe")
+    if os.path.isfile(direct):
+        return direct
+    # 2. exe 旁边的 deno 子文件夹（自动下载落点）
+    local = os.path.join(_exe_dir(), "deno", "deno.exe")
+    if os.path.isfile(local):
+        return local
+    # 3. PATH（开发机用 winget/scoop 装的）
+    return shutil.which("deno")
+
+
+def _deno_bundled() -> bool:
+    """本「包」是否自带 deno.exe（只看程序目录，不看机器 PATH）。
+    用来决定右上角是否把 YouTube 列为适用网站——区分的是发布版本，而非运行的机器。"""
+    return (os.path.isfile(os.path.join(_exe_dir(), "deno.exe"))
+            or os.path.isfile(os.path.join(_exe_dir(), "deno", "deno.exe")))
+
+
+def _ensure_deno_on_path(deno_path: str | None):
+    """把 deno 所在目录加进本进程 PATH，确保 yt-dlp 的子进程检测能找到它。"""
+    if not deno_path:
+        return
+    d = os.path.dirname(deno_path)
+    parts = os.environ.get("PATH", "").split(os.pathsep)
+    if d and d not in parts:
+        os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+
+
+def download_deno(progress_cb=None, log_cb=None) -> str:
+    """下载并解压 Deno，返回 deno.exe 路径。"""
+    dest_dir = os.path.join(_exe_dir(), "deno")
+    os.makedirs(dest_dir, exist_ok=True)
+
+    tmp_zip = os.path.join(tempfile.gettempdir(), "deno_dl.zip")
+
+    def reporthook(count, block, total):
+        if total > 0 and progress_cb:
+            progress_cb(count * block / total * 100)
+
+    if log_cb:
+        log_cb("正在下载 Deno（约 40 MB，YouTube 解析需要）...")
+    urllib.request.urlretrieve(DENO_URL, tmp_zip, reporthook)
+
+    if log_cb:
+        log_cb("正在解压 Deno...")
+    with zipfile.ZipFile(tmp_zip, "r") as z:
+        z.extractall(dest_dir)
+
+    os.remove(tmp_zip)
+    exe = os.path.join(dest_dir, "deno.exe")
+    _ensure_deno_on_path(exe)
+    if log_cb:
+        log_cb(f"Deno 已就绪: {exe}")
+    return exe
+
+
 # ── 清晰度预设 ────────────────────────────────────────────────────────────
 # 注意：非"最高"选项末尾不加无约束 /best 兜底，避免跌回最高画质
+# 说明：YouTube 的 AV1(av01) 高码流常需 PO Token、易 403/卡 0 字节，VP9/H264 稳定。
+# 故各档一律「优先非 av01 编码」，av01 仅作兜底，既保画质又避开 403。B站/抖音无 av01，
+# 走后段普通 bestvideo 兜底，行为不变。
 QUALITIES = {
     "最高画质": {
-        "format": "bestvideo+bestaudio/best",
+        "format": "bestvideo[vcodec!*=av01]+bestaudio/bestvideo+bestaudio/best",
         "merge_output_format": "mp4",
         "ext": "mp4",
         "suffix": "_最高画质",
     },
     "4K（2160p）": {
-        "format": "bestvideo[height<=2160]+bestaudio/best[height<=2160]/bestvideo+bestaudio/best",
+        "format": "bestvideo[height<=2160][vcodec!*=av01]+bestaudio/bestvideo[height<=2160]+bestaudio/best[height<=2160]/bestvideo+bestaudio/best",
         "merge_output_format": "mp4",
         "ext": "mp4",
         "suffix": "_4K",
     },
     "1080p": {
-        "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best",
+        "format": "bestvideo[height<=1080][vcodec!*=av01]+bestaudio/bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best",
         "merge_output_format": "mp4",
         "ext": "mp4",
         "suffix": "_1080p",
     },
     "720p": {
-        "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/bestvideo+bestaudio/best",
+        "format": "bestvideo[height<=720][vcodec!*=av01]+bestaudio/bestvideo[height<=720]+bestaudio/best[height<=720]/bestvideo+bestaudio/best",
         "merge_output_format": "mp4",
         "ext": "mp4",
         "suffix": "_720p",
     },
     "360p（提取文字用）": {
-        "format": "bestvideo[height<=360]+bestaudio/best[height<=360]/worst+bestaudio/worst/best",
+        "format": "bestvideo[height<=360][vcodec!*=av01]+bestaudio/bestvideo[height<=360]+bestaudio/best[height<=360]/worst+bestaudio/worst/best",
         "merge_output_format": "mp4",
         "ext": "mp4",
         "suffix": "_360p",
@@ -258,7 +343,19 @@ def is_playlist_url(url):
             "space.bilibili.com" in u or
             "/playlist?" in u or
             "/channel/" in u or
+            _is_youtube_playlist_url(url) or
             _is_douyin_user_url(url))
+
+def _is_youtube_playlist_url(url):
+    """YouTube 频道主页（@handle / channel / c / user）或播放列表页 → 批量。
+    单个视频 watch?v=…（即使带 list=）与 shorts 仍按单条下载。"""
+    u = url.lower()
+    if "youtube.com" not in u:
+        return False
+    if "/watch" in u or "/shorts/" in u:
+        return False
+    return ("/@" in u or "/channel/" in u or "/c/" in u
+            or "/user/" in u or "/playlist" in u)
 
 def _is_douyin_user_url(url):
     return bool(re.search(r'douyin\.com/user/[^?]+', url))
@@ -487,6 +584,88 @@ async def _playwright_collect_user_videos(user_url: str, cookie_file: str, log_f
         await browser.close()
     return videos
 
+
+async def _playwright_fetch_single_douyin(video_url, cookie_file, log_fn, stop_event=None):
+    """用真实浏览器打开抖音单视频页，拦截 aweme/detail 接口拿直连地址。
+
+    返回 {"id","title","formats"} 或 None。
+    绕过 yt-dlp 被抖音反爬挡死（缺 a_bogus 签名）的详情接口：浏览器自己
+    带合法签名请求 detail，我们拦截它的 200 响应，从中提取直连 CDN 地址。
+    与博主批量下载（_playwright_collect_user_videos）是同一套绕过思路。
+    """
+    from playwright.async_api import async_playwright
+    m = re.search(r'/video/(\d+)', video_url)
+    vid = m.group(1) if m else ""
+    result = {}
+
+    async with async_playwright() as p:
+        browser = await _launch_browser(p, log_fn)
+        ctx = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 900},
+        )
+        if cookie_file and os.path.exists(cookie_file):
+            try:
+                await ctx.add_cookies(_load_douyin_cookies(cookie_file))
+                log_fn("已注入 Cookie")
+            except Exception:
+                pass
+
+        page = await ctx.new_page()
+
+        async def on_response(resp):
+            if "aweme/v1/web/aweme/detail" in resp.url and resp.status == 200:
+                try:
+                    body = await resp.json()
+                    item = body.get("aweme_detail") or {}
+                    fmts = _extract_douyin_formats(item)
+                    if fmts and not result.get("formats"):
+                        result["id"] = str(item.get("aweme_id") or vid)
+                        result["title"] = (item.get("desc") or "").strip() or vid
+                        result["formats"] = fmts
+                except Exception:
+                    pass
+
+        page.on("response", on_response)
+
+        # 先访问主页"养"一下（拿 ttwid 等），降低被风控拦截的概率
+        try:
+            await page.goto("https://www.douyin.com/", wait_until="domcontentloaded", timeout=20000)
+        except Exception:
+            pass
+        await asyncio.sleep(3)
+
+        log_fn("正在打开视频页获取直连地址...")
+        try:
+            await page.goto(video_url, wait_until="domcontentloaded", timeout=20000)
+        except Exception:
+            pass
+
+        # 最多等 40 秒：期间若出现"验证码中间页"，请在弹出的浏览器里手动滑动
+        warned = False
+        for _ in range(40):
+            if stop_event is not None and stop_event.is_set():
+                break
+            if result.get("formats"):
+                break
+            try:
+                title = await page.title()
+            except Exception:
+                title = ""
+            if "验证码" in title and not warned:
+                log_fn("⚠ 抖音弹出验证码，请在弹出的浏览器里手动滑动完成验证（完成后会自动继续）")
+                warned = True
+            await asyncio.sleep(1)
+
+        try:
+            await ctx.close()
+            await browser.close()
+        except Exception:
+            pass
+
+    return result or None
+
+
 def preprocess_url(url):
     """规整链接。
 
@@ -549,10 +728,18 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(f"VidFetch视频下载工具 v{VERSION}")
-        self.geometry("600x720")
-        self.minsize(540, 560)
+        self.minsize(720, 420)
+        self.configure(fg_color=BG)
+        # 关键：把窗口底层 tk 背景刷成米色，放大/最大化时露出的区域不会先闪黑
+        try:
+            tk.Tk.configure(self, bg=BG)
+        except Exception:
+            pass
 
         self._ffmpeg_path = find_ffmpeg()
+        # Deno：YouTube 解析必需。检测到就加入 PATH，让 yt-dlp 子进程能找到。
+        self._deno_path = find_deno()
+        _ensure_deno_on_path(self._deno_path)
         self._thread = None
         # 下载控制：pause_event 置位=运行中，清除=暂停；stop_event 置位=请求停止
         self._pause_event = threading.Event()
@@ -566,41 +753,84 @@ class App(ctk.CTk):
             self.after(300, self._prompt_ffmpeg)
 
     def _center(self):
-        self.update_idletasks()
-        w, h = 600, 720
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        # 默认窗口：横向偏宽、刚好容纳折叠态内容（无多余空白），展开日志时再增高。
+        # 折叠态高度按“下载日志”卡片底部实测换算成逻辑像素，跨 DPI 准确。
+        w = 880
+        self.geometry(f"{w}x740")     # 先给足高度让控件完全布局
+        self.update()
+        scale = max(1.0, self.winfo_width() / float(w))   # 物理/逻辑 像素比
+        content = (self._log_header.winfo_rooty() + self._log_header.winfo_height()
+                   - self.winfo_rooty()) / scale + 14      # +底部留白
+        self._h_collapsed = int(round(content))
+        self._h_expanded = self._h_collapsed + 240
+        h = self._h_collapsed
+        sw = int(self.winfo_screenwidth() / scale)
+        sh = int(self.winfo_screenheight() / scale)
         x = max(0, (sw - w) // 2)
         y = max(0, (sh - h) // 2 - 20)
         self.geometry(f"{w}x{h}+{x}+{y}")
 
+    def _apply_height(self, h):
+        """只改窗口高度，保持当前宽度与位置（最大化时不调整）。"""
+        if str(self.state()) == "zoomed":
+            return
+        # geometry() 返回逻辑像素字符串，跨 DPI 安全（不读 winfo_* 物理像素）
+        m = re.match(r"(\d+)x(\d+)\+(-?\d+)\+(-?\d+)", self.geometry())
+        if not m:
+            return
+        w, _, x, y = m.groups()
+        self.geometry(f"{w}x{h}+{x}+{y}")
+
     # ── UI ───────────────────────────────────────────────────────────────
     def _build_ui(self):
-        PURPLE, PURPLE_H = "#7c6af7", "#6a5ce6"
-        GREY, GREY_H, REDH = "#3a3a4a", "#4a4a5e", "#c0504d"
-        DIMC = "#9a9ab0"
+        self.configure(fg_color=BG)
 
         def F(sz=13, bold=False):
             return ctk.CTkFont("微软雅黑", sz, "bold" if bold else "normal")
 
-        # 顶部标题栏
-        header = ctk.CTkFrame(self, fg_color=PURPLE, corner_radius=0, height=64)
+        def outline_btn(parent, text, cmd, width=64, height=34, **kw):
+            return ctk.CTkButton(parent, text=text, width=width, height=height,
+                                 font=F(12), fg_color=CARD, hover_color=CARD_H,
+                                 text_color=TEXT, border_width=1, border_color=BORDER,
+                                 command=cmd, **kw)
+
+        def make_entry(parent, **kw):
+            return ctk.CTkEntry(parent, font=F(13), height=34, fg_color=FIELD,
+                                border_color=FIELD_BD, text_color=TEXT,
+                                placeholder_text_color=LABEL, **kw)
+
+        def make_menu(parent, variable, values, width=None):
+            kw = {"width": width} if width else {}
+            return ctk.CTkOptionMenu(parent, variable=variable, values=values,
+                                     font=F(13), height=34, fg_color=FIELD,
+                                     button_color=FIELD_BTN, button_hover_color=FIELD_BD,
+                                     text_color=TEXT, dropdown_fg_color=CARD,
+                                     dropdown_text_color=TEXT, dropdown_hover_color=CARD_H, **kw)
+
+        # 顶部标题栏（米色背景 + 底部细分隔线，logo 保持 v1.08 不变）
+        header = ctk.CTkFrame(self, fg_color=BG, corner_radius=0, height=58)
         header.pack(fill="x")
         header.pack_propagate(False)
-        ctk.CTkLabel(header, text="VidFetch 视频下载工具", text_color="white",
+        ctk.CTkLabel(header, text="VidFetch 视频下载工具", text_color=TEXT,
                      font=F(18, True)).pack(side="left", padx=(20, 8))
-        ctk.CTkLabel(header, text=f"v{VERSION}", text_color="#e6e0ff",
+        ctk.CTkLabel(header, text=f"v{VERSION}", text_color=LABEL,
                      font=F(12)).pack(side="left", pady=(6, 0))
-        ctk.CTkLabel(header, text="Bilibili · 抖音 · YouTube · 腾讯 · 爱奇艺",
-                     text_color="#ddd6ff", font=F(11)).pack(side="right", padx=20)
+        # 适用网站：只列真实有效的。带 deno 的版本含 YouTube，不带的只有 B站/抖音。
+        # （腾讯/爱奇艺/央视频多为 DRM 或反爬，实测下不了，故不列出，以免误导）
+        _sites = "Bilibili · 抖音 · YouTube" if _deno_bundled() else "Bilibili · 抖音"
+        ctk.CTkLabel(header, text=_sites,
+                     text_color=SITES, font=F(12, True)).pack(side="right", padx=20)
+        ctk.CTkFrame(self, fg_color=BORDER, height=1, corner_radius=0).pack(fill="x")
 
-        body = ctk.CTkFrame(self, fg_color="transparent")
+        # body 用实心米色（非 transparent）：放大时由它填充，且重绘比透明帧更快
+        body = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
         body.pack(fill="both", expand=True, padx=18, pady=14)
         body.columnconfigure(0, weight=1)
         r = 0
 
         def section(text, pady=(0, 4)):
             nonlocal r
-            ctk.CTkLabel(body, text=text, anchor="w", text_color=DIMC,
+            ctk.CTkLabel(body, text=text, anchor="w", text_color=LABEL,
                          font=F(12)).grid(row=r, column=0, sticky="w", pady=pady)
             r += 1
 
@@ -610,11 +840,9 @@ class App(ctk.CTk):
         urlrow.grid(row=r, column=0, sticky="ew", pady=(0, 12)); r += 1
         urlrow.columnconfigure(0, weight=1)
         self.url_var = tk.StringVar()
-        ctk.CTkEntry(urlrow, textvariable=self.url_var, font=F(13), height=34,
-                     placeholder_text="粘贴视频或博主主页链接").grid(row=0, column=0, sticky="ew")
-        ctk.CTkButton(urlrow, text="粘贴", width=64, height=34, font=F(12),
-                      fg_color=PURPLE, hover_color=PURPLE_H,
-                      command=self._paste_url).grid(row=0, column=1, padx=(8, 0))
+        make_entry(urlrow, textvariable=self.url_var,
+                   placeholder_text="粘贴视频或博主主页链接").grid(row=0, column=0, sticky="ew")
+        outline_btn(urlrow, "粘贴", self._paste_url).grid(row=0, column=1, padx=(8, 0))
 
         # 清晰度 + 并发
         section("清晰度  /  同时下载数量（批量时生效）")
@@ -623,12 +851,8 @@ class App(ctk.CTk):
         qrow.columnconfigure(0, weight=1)
         self.quality_var = tk.StringVar(value=list(QUALITIES.keys())[0])
         self.concurrency_var = tk.StringVar(value="3")
-        ctk.CTkOptionMenu(qrow, variable=self.quality_var, values=list(QUALITIES.keys()),
-                          font=F(13), height=34, fg_color=GREY, button_color=PURPLE,
-                          button_hover_color=PURPLE_H).grid(row=0, column=0, sticky="ew")
-        ctk.CTkOptionMenu(qrow, variable=self.concurrency_var, values=["1", "2", "3", "4", "5"],
-                          width=82, font=F(13), height=34, fg_color=GREY, button_color=PURPLE,
-                          button_hover_color=PURPLE_H).grid(row=0, column=1, padx=(8, 0))
+        make_menu(qrow, self.quality_var, list(QUALITIES.keys())).grid(row=0, column=0, sticky="ew")
+        make_menu(qrow, self.concurrency_var, ["1", "2", "3", "4", "5"], width=82).grid(row=0, column=1, padx=(8, 0))
 
         # 保存目录
         section("保存目录")
@@ -636,10 +860,8 @@ class App(ctk.CTk):
         dirrow.grid(row=r, column=0, sticky="ew", pady=(0, 12)); r += 1
         dirrow.columnconfigure(0, weight=1)
         self.dir_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Videos", "Downloaded"))
-        ctk.CTkEntry(dirrow, textvariable=self.dir_var, font=F(13), height=34).grid(row=0, column=0, sticky="ew")
-        ctk.CTkButton(dirrow, text="浏览", width=64, height=34, font=F(12),
-                      fg_color=GREY, hover_color=GREY_H,
-                      command=self._browse_dir).grid(row=0, column=1, padx=(8, 0))
+        make_entry(dirrow, textvariable=self.dir_var).grid(row=0, column=0, sticky="ew")
+        outline_btn(dirrow, "浏览", self._browse_dir).grid(row=0, column=1, padx=(8, 0))
 
         # Cookie 文件
         section("Cookie（可选，仅需登录的视频才用）")
@@ -647,27 +869,21 @@ class App(ctk.CTk):
         ckrow.grid(row=r, column=0, sticky="ew", pady=(0, 8)); r += 1
         ckrow.columnconfigure(0, weight=1)
         self.cookie_var = tk.StringVar()
-        ctk.CTkEntry(ckrow, textvariable=self.cookie_var, font=F(13), height=34,
-                     placeholder_text="手动选择 cookies.txt（或下方从浏览器获取）").grid(row=0, column=0, sticky="ew")
-        ctk.CTkButton(ckrow, text="选择", width=64, height=34, font=F(12),
-                      fg_color=GREY, hover_color=GREY_H,
-                      command=self._browse_cookie).grid(row=0, column=1, padx=(8, 0))
+        make_entry(ckrow, textvariable=self.cookie_var,
+                   placeholder_text="手动选择 cookies.txt（或下方从浏览器获取）").grid(row=0, column=0, sticky="ew")
+        outline_btn(ckrow, "选择", self._browse_cookie).grid(row=0, column=1, padx=(8, 0))
 
-        # 浏览器取 Cookie
+        # 浏览器取 Cookie + ffmpeg 状态（同一行）
         brow = ctk.CTkFrame(body, fg_color="transparent")
-        brow.grid(row=r, column=0, sticky="w", pady=(0, 10)); r += 1
-        ctk.CTkLabel(brow, text="从浏览器自动获取 Cookie:", text_color=DIMC,
+        brow.grid(row=r, column=0, sticky="ew", pady=(0, 10)); r += 1
+        ctk.CTkLabel(brow, text="浏览器 Cookie:", text_color=LABEL,
                      font=F(12)).pack(side="left", padx=(0, 8))
         self.cookie_browser_var = tk.StringVar(value="不使用")
-        ctk.CTkOptionMenu(brow, variable=self.cookie_browser_var,
-                          values=["不使用", "Chrome", "Edge", "Firefox", "Brave"],
-                          width=120, font=F(12), height=32, fg_color=GREY,
-                          button_color=PURPLE, button_hover_color=PURPLE_H).pack(side="left")
-
-        # ffmpeg 状态
+        make_menu(brow, self.cookie_browser_var,
+                  ["不使用", "Chrome", "Edge", "Firefox", "Brave"], width=120).pack(side="left")
         self.ffmpeg_var = tk.StringVar()
-        self._ffmpeg_label = ctk.CTkLabel(body, textvariable=self.ffmpeg_var, anchor="w", font=F(12))
-        self._ffmpeg_label.grid(row=r, column=0, sticky="w", pady=(0, 8)); r += 1
+        self._ffmpeg_label = ctk.CTkLabel(brow, textvariable=self.ffmpeg_var, anchor="e", font=F(12, True))
+        self._ffmpeg_label.pack(side="right")
         self._update_ffmpeg_label()
 
         # 下载 / 暂停 / 停止
@@ -676,34 +892,74 @@ class App(ctk.CTk):
         btnrow.columnconfigure(0, weight=3)
         btnrow.columnconfigure(1, weight=1)
         btnrow.columnconfigure(2, weight=1)
-        self.btn = ctk.CTkButton(btnrow, text="下  载", height=40, font=F(15, True),
-                                 fg_color=PURPLE, hover_color=PURPLE_H, command=self._start_download)
+        self.btn = ctk.CTkButton(btnrow, text="下  载", height=44, font=F(15, True),
+                                 fg_color=ORANGE, hover_color=ORANGE_H, text_color="white",
+                                 command=self._start_download)
         self.btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        self.pause_btn = ctk.CTkButton(btnrow, text="暂停", height=40, font=F(13, True),
-                                       fg_color=GREY, hover_color=GREY_H, state="disabled",
-                                       command=self._toggle_pause)
+        self.pause_btn = outline_btn(btnrow, "暂停", self._toggle_pause, height=44)
+        self.pause_btn.configure(font=F(13, True), state="disabled")
         self.pause_btn.grid(row=0, column=1, sticky="ew", padx=3)
-        self.stop_btn = ctk.CTkButton(btnrow, text="停止", height=40, font=F(13, True),
-                                      fg_color=GREY, hover_color=REDH, state="disabled",
-                                      command=self._stop_download)
+        self.stop_btn = outline_btn(btnrow, "停止", self._stop_download, height=44)
+        self.stop_btn.configure(font=F(13, True), state="disabled")
         self.stop_btn.grid(row=0, column=2, sticky="ew", padx=(6, 0))
 
         # 进度条 + 状态
-        self.progress = ctk.CTkProgressBar(body, height=14, progress_color=PURPLE)
+        self.progress = ctk.CTkProgressBar(body, height=10, progress_color=ORANGE, fg_color=FIELD)
         self.progress.grid(row=r, column=0, sticky="ew", pady=(2, 4)); r += 1
         self.progress.set(0)
+        strow = ctk.CTkFrame(body, fg_color="transparent")
+        strow.grid(row=r, column=0, sticky="ew"); r += 1
+        strow.columnconfigure(0, weight=1)
         self.status_var = tk.StringVar(value="就绪")
-        ctk.CTkLabel(body, textvariable=self.status_var, anchor="w", text_color=DIMC,
-                     font=F(12)).grid(row=r, column=0, sticky="w"); r += 1
+        ctk.CTkLabel(strow, textvariable=self.status_var, anchor="w", text_color=LABEL,
+                     font=F(12)).grid(row=0, column=0, sticky="w")
+        self.pct_var = tk.StringVar(value="0%")
+        ctk.CTkLabel(strow, textvariable=self.pct_var, anchor="e", text_color=LABEL,
+                     font=F(12)).grid(row=0, column=1, sticky="e")
 
-        # 日志
-        ctk.CTkLabel(body, text="下载日志", anchor="w", text_color=DIMC,
-                     font=F(12)).grid(row=r, column=0, sticky="w", pady=(8, 4)); r += 1
-        body.rowconfigure(r, weight=1)
-        self.log_text = ctk.CTkTextbox(body, font=("Consolas", 12), fg_color="#15151f",
-                                       text_color="#c8c8da", wrap="word")
-        self.log_text.grid(row=r, column=0, sticky="nsew")
+        # 下载日志（可折叠，默认收起）
+        self.log_open = False
+        log_header = ctk.CTkFrame(body, fg_color=CARD, corner_radius=10, height=46,
+                                  border_width=1, border_color=BORDER)
+        log_header.grid(row=r, column=0, sticky="ew", pady=(8, 0)); r += 1
+        log_header.grid_propagate(False)
+        log_header.columnconfigure(0, weight=1)
+        self._log_header = log_header
+        self.log_arrow = ctk.CTkLabel(log_header, text="▸   下载日志", font=F(13, True),
+                                      text_color=TEXT)
+        self.log_arrow.grid(row=0, column=0, sticky="w", padx=16)
+        self.log_hint = ctk.CTkLabel(log_header, text="点击展开", font=F(11), text_color=LABEL)
+        self.log_hint.grid(row=0, column=1, sticky="e", padx=16)
+        for w in (log_header, self.log_arrow, self.log_hint):
+            w.configure(cursor="hand2")
+            w.bind("<Button-1>", lambda e: self._toggle_log())
+        # 文本框预先创建好（绘制完成）再 grid_remove：首次展开即刻显示、不闪烁；
+        # 因高度按"下载日志"卡片位置实测，grid_remove 的文本框不影响折叠态尺寸。
+        self._log_text_row = r; r += 1
+        self.log_text = ctk.CTkTextbox(body, font=("Consolas", 12), fg_color=CARD,
+                                       text_color="#4a4239", border_width=1,
+                                       border_color=BORDER, wrap="word")
+        self.log_text.grid(row=self._log_text_row, column=0, sticky="nsew", pady=(6, 0))
+        self.log_text.grid_remove()
         self.log_text.configure(state="disabled")
+
+    def _toggle_log(self):
+        self.log_open = not self.log_open
+        body = self._log_header.master
+        if self.log_open:
+            self.log_arrow.configure(text="▾   下载日志")
+            self.log_hint.configure(text="点击收起")
+            # 先增高窗口（露出的区域由米色窗口底色填充，不会闪黑），再放入文本框并立即重绘
+            self._apply_height(self._h_expanded)
+            body.rowconfigure(self._log_text_row, weight=1)
+            self.log_text.grid()
+            self.update_idletasks()
+        else:
+            self.log_arrow.configure(text="▸   下载日志")
+            self.log_hint.configure(text="点击展开")
+            self.log_text.grid_remove()
+            body.rowconfigure(self._log_text_row, weight=0)
+            self._apply_height(self._h_collapsed)
 
     def _update_ffmpeg_label(self):
         if self._ffmpeg_path:
@@ -765,6 +1021,32 @@ class App(ctk.CTk):
 
         threading.Thread(target=_run, daemon=True).start()
 
+    def _auto_install_deno(self):
+        self._set_btn(False)
+        self._log("开始下载 Deno（YouTube 解析需要）...")
+
+        def _run():
+            try:
+                path = download_deno(
+                    progress_cb=lambda p: self.after(0, lambda: self.progress.set(max(0.0, min(1.0, p / 100.0)))),
+                    log_cb=self._log,
+                )
+                self._deno_path = path
+                self._log("Deno 安装完成，重新点「下载」即可解析 YouTube 视频。")
+                self.after(0, lambda: self.status_var.set("Deno 已就绪"))
+            except Exception as e:
+                self._log(f"[错误] Deno 下载失败: {e}")
+                self.after(0, lambda: messagebox.showerror(
+                    "下载失败",
+                    "请手动安装 Deno（https://deno.com）并将其加入 PATH，"
+                    f"或把 deno.exe 放到本程序同目录。\n\n错误: {e}"
+                ))
+            finally:
+                self._set_btn(True)
+                self.after(0, lambda: self.progress.set(0))
+
+        threading.Thread(target=_run, daemon=True).start()
+
     def _log(self, msg):
         def _upd():
             self.log_text.configure(state="normal")
@@ -774,7 +1056,11 @@ class App(ctk.CTk):
         self.after(0, _upd)
 
     def _set_progress(self, pct):
-        self.after(0, lambda: self.progress.set(max(0.0, min(1.0, pct / 100.0))))
+        v = max(0.0, min(1.0, pct / 100.0))
+        def _upd():
+            self.progress.set(v)
+            self.pct_var.set(f"{int(round(v * 100))}%")
+        self.after(0, _upd)
 
     def _set_status(self, msg):
         self.after(0, lambda: self.status_var.set(msg))
@@ -892,6 +1178,14 @@ class App(ctk.CTk):
             if messagebox.askyesno("需要 ffmpeg", "需要先安装 ffmpeg 才能下载，现在安装？"):
                 self._auto_install_ffmpeg()
             return
+        # YouTube 需要 Deno 解析 JS 挑战；缺失则先提示自动安装
+        if ("youtube.com" in url.lower() or "youtu.be" in url.lower()) and not self._deno_path:
+            if messagebox.askyesno(
+                "需要 Deno",
+                "下载 YouTube 视频需要 Deno 运行时来解析（约 40 MB，只需装一次）。\n\n是否现在自动安装？",
+            ):
+                self._auto_install_deno()
+            return
 
         out_dir = self.dir_var.get().strip() or os.path.join(os.path.expanduser("~"), "Videos", "Downloaded")
         quality = self.quality_var.get()
@@ -906,6 +1200,7 @@ class App(ctk.CTk):
         self._pause_event.set()
         self._set_btn(False)
         self.progress.set(0)
+        self.pct_var.set("0%")
         self._set_status("准备中...")
         raw_url = "".join(self.url_var.get().split())
         self._log(f"\n{'─'*48}")
@@ -950,28 +1245,38 @@ class App(ctk.CTk):
         return None
 
     def _ask_episode_selection(self, parts):
-        """主线程弹分集勾选框。返回选中的 page 列表；点取消/关闭返回 None。"""
+        """兼容旧调用：parts=[(page, title)]，返回选中的 page 列表或 None。"""
+        items = [(pg, f"P{pg}  {t}") for pg, t in parts]
+        return self._ask_item_selection(items, f"共 {len(items)} 个分集，默认全选；取消勾选不想下载的：")
+
+    def _ask_item_selection(self, items, header_text):
+        """主线程弹通用勾选框（B站分集 / 番剧 / UP主 / YouTube合集 / 抖音博主 通用）。
+
+        items: [(key, label), ...]，默认全选。
+        返回选中的 key 列表；点取消/关闭返回 None。
+        """
         holder = {"result": None}
         done = threading.Event()
 
         def _show():
             FF = lambda sz=12, b=False: ctk.CTkFont("微软雅黑", sz, "bold" if b else "normal")
-            win = ctk.CTkToplevel(self)
-            win.title("选择要下载的分集")
-            win.geometry("540x480")
+            win = ctk.CTkToplevel(self, fg_color=BG)
+            win.title("选择要下载的视频")
+            win.geometry("560x520")
             win.transient(self)
             win.after(200, lambda: win.grab_set())   # CTkToplevel 需稍延迟再 grab
-            ctk.CTkLabel(win, text=f"共 {len(parts)} 个分集，默认全选；取消勾选不想下载的：",
-                         font=FF(13), anchor="w").pack(anchor="w", padx=16, pady=(14, 6))
-            scroll = ctk.CTkScrollableFrame(win, fg_color="#2a2a3e")
+            ctk.CTkLabel(win, text=header_text,
+                         font=FF(13), text_color=TEXT, anchor="w", justify="left",
+                         wraplength=520).pack(anchor="w", padx=16, pady=(14, 6))
+            scroll = ctk.CTkScrollableFrame(win, fg_color=CARD)
             scroll.pack(fill="both", expand=True, padx=16)
             vars_ = []
-            for page, title in parts:
+            for key, label in items:
                 v = tk.BooleanVar(value=True)
-                vars_.append((page, v))
-                ctk.CTkCheckBox(scroll, text=f"P{page}  {title}", variable=v,
-                                font=FF(12), fg_color="#7c6af7",
-                                hover_color="#6a5ce6").pack(fill="x", anchor="w", pady=4)
+                vars_.append((key, v))
+                ctk.CTkCheckBox(scroll, text=str(label), variable=v,
+                                font=FF(12), text_color=TEXT, fg_color=ORANGE,
+                                hover_color=ORANGE_H).pack(fill="x", anchor="w", pady=4)
 
             def _set_all(val):
                 for _, v in vars_:
@@ -984,20 +1289,66 @@ class App(ctk.CTk):
 
             bar = ctk.CTkFrame(win, fg_color="transparent")
             bar.pack(fill="x", padx=16, pady=12)
-            ctk.CTkButton(bar, text="全选", width=64, font=FF(12), fg_color="#3a3a4a",
-                          hover_color="#4a4a5e", command=lambda: _set_all(True)).pack(side="left")
-            ctk.CTkButton(bar, text="全不选", width=64, font=FF(12), fg_color="#3a3a4a",
-                          hover_color="#4a4a5e", command=lambda: _set_all(False)).pack(side="left", padx=6)
-            ctk.CTkButton(bar, text="开始下载", font=FF(13, True), fg_color="#7c6af7",
-                          hover_color="#6a5ce6",
+            ctk.CTkButton(bar, text="全选", width=64, font=FF(12), fg_color=CARD,
+                          hover_color=CARD_H, text_color=TEXT, border_width=1, border_color=BORDER,
+                          command=lambda: _set_all(True)).pack(side="left")
+            ctk.CTkButton(bar, text="全不选", width=64, font=FF(12), fg_color=CARD,
+                          hover_color=CARD_H, text_color=TEXT, border_width=1, border_color=BORDER,
+                          command=lambda: _set_all(False)).pack(side="left", padx=6)
+            ctk.CTkButton(bar, text="开始下载", font=FF(13, True), fg_color=ORANGE,
+                          hover_color=ORANGE_H, text_color="white",
                           command=lambda: _finish([pg for pg, v in vars_ if v.get()])).pack(side="right")
-            ctk.CTkButton(bar, text="取消", width=72, font=FF(12), fg_color="#555568",
-                          hover_color="#666677", command=lambda: _finish(None)).pack(side="right", padx=6)
+            ctk.CTkButton(bar, text="取消", width=72, font=FF(12), fg_color=CARD,
+                          hover_color=CARD_H, text_color=TEXT, border_width=1, border_color=BORDER,
+                          command=lambda: _finish(None)).pack(side="right", padx=6)
             win.protocol("WM_DELETE_WINDOW", lambda: _finish(None))
 
         self.after(0, _show)
         done.wait()
         return holder["result"]
+
+    def _select_playlist_items(self, url, base_opts):
+        """对 yt-dlp 播放列表（番剧/UP主/YouTube）先列出条目让用户勾选。
+
+        返回：
+          None        → 不限制（全选，或列表≤1条/列举失败时照常全下）
+          "CANCELLED" → 用户取消
+          "1,3,5..."  → 选中的 playlist 序号，赋给 opts["playlist_items"]
+        """
+        self._set_status("正在获取合集列表...")
+        self._log("正在获取合集视频列表（用于勾选，请稍候）...")
+        flat = {
+            "quiet": True, "extract_flat": "in_playlist", "skip_download": True,
+            "ignoreerrors": True, "playlistend": 500,
+        }
+        for k in ("http_headers", "cookiefile", "cookiesfrombrowser",
+                  "extractor_args", "socket_timeout"):
+            if k in base_opts:
+                flat[k] = base_opts[k]
+        try:
+            with yt_dlp.YoutubeDL(flat) as y:
+                info = y.extract_info(url, download=False)
+        except Exception as e:
+            self._log(f"[提示] 获取合集列表失败，将直接下载全部：{str(e)[:60]}")
+            return None
+
+        entries = [e for e in (info.get("entries") or []) if e]
+        if len(entries) <= 1:
+            return None                      # 单条或拿不到列表，无需勾选
+        items = []
+        for i, e in enumerate(entries, 1):
+            title = (e.get("title") or e.get("id") or f"第{i}个视频").strip()
+            items.append((i, f"{i:>3}. {title}"))
+        self._log(f"共 {len(items)} 个视频，弹出勾选窗口...")
+        sel = self._ask_item_selection(
+            items, f"共 {len(items)} 个视频，默认全选；取消勾选不想下载的：")
+        if not sel:                          # None(取消) 或 空(一个没选)
+            return "CANCELLED"
+        if len(sel) >= len(entries):
+            self._log(f"已选择全部 {len(entries)} 个视频")
+            return None
+        self._log(f"已选择 {len(sel)}/{len(entries)} 个视频")
+        return ",".join(str(i) for i in sel)
 
     def _do_download(self, url, out_dir, quality_label, cookie_file, concurrency=3,
                      cookie_browser="不使用"):
@@ -1007,6 +1358,19 @@ class App(ctk.CTk):
         if site == "douyin" and _is_douyin_user_url(url):
             self._do_douyin_user_batch(url, out_dir, quality_label, cookie_file, concurrency)
             return
+
+        # 抖音单视频 → 真实浏览器拦截直连地址（绕过被反爬挡死的 yt-dlp 详情接口）
+        if site == "douyin" and not is_playlist_url(url):
+            try:
+                if self._do_douyin_single(url, out_dir, quality_label, cookie_file):
+                    self._set_btn(True)
+                    return
+            except DownloadCancelled:
+                self._log("⏹ 已停止下载")
+                self._set_status("已停止")
+                self._set_btn(True)
+                return
+            self._log("浏览器取址未成功，回退 yt-dlp 兜底尝试...")
 
         # B站多P合集：取分集（pagelist），多P 且未指定某P 时弹勾选（默认全选）
         # PCDN→普通CDN 的规避由 _install_bili_pcdn_patch() 在提取层自动完成，无需在此另调接口
@@ -1079,13 +1443,22 @@ class App(ctk.CTk):
                           "可在「从浏览器自动获取 Cookie」选择已登录B站的浏览器（如 Edge/Chrome）；"
                           "若登录后仍是 480p，则是该视频源本身清晰度就低。")
 
+        # 番剧整季 / UP主空间 / YouTube 合集（yt-dlp 播放列表）：先列出条目让用户勾选
+        # （B站多P已在前面用 pagelist 勾选过，selected_items 非空就跳过）
+        if playlist and not selected_items:
+            picked = self._select_playlist_items(url, opts)
+            if picked == "CANCELLED":
+                self._log("已取消下载"); self._set_status("已取消"); self._set_btn(True); return
+            if picked:
+                opts["playlist_items"] = picked
+
         try:
             with PatchedYDL(opts) as ydl:
                 code = ydl.download([url])
             if code == 0:
                 self._log("✓ 下载完成！")
                 self._set_status("下载完成 ✓")
-                self.after(0, lambda: self.progress.set(1.0))
+                self.after(0, lambda: (self.progress.set(1.0), self.pct_var.set("100%")))
             else:
                 self._log("下载遇到问题，请查看日志")
                 self._set_status("下载遇到问题")
@@ -1123,6 +1496,20 @@ class App(ctk.CTk):
             self._log("[!] 未能获取视频列表，可能 Cookie 已失效或页面结构变化")
             self._set_btn(True)
             return
+
+        # 收集完成 → 弹勾选框选择要下载的视频（默认全选）
+        if len(videos) > 1:
+            items = [(i, f"{i:>3}. {(v.get('title') or v.get('id') or '')[:60]}")
+                     for i, v in enumerate(videos, 1)]
+            sel = self._ask_item_selection(
+                items, f"共 {len(items)} 个视频，默认全选；取消勾选不想下载的：")
+            if not sel:
+                self._log("已取消下载"); self._set_status("已取消"); self._set_btn(True); return
+            if len(sel) < len(videos):
+                videos = [videos[i - 1] for i in sel]
+                self._log(f"已选择 {len(videos)} 个视频")
+            else:
+                self._log(f"已选择全部 {len(videos)} 个视频")
 
         total = len(videos)
         with_addr = sum(1 for v in videos if v.get("formats"))
@@ -1205,8 +1592,59 @@ class App(ctk.CTk):
         else:
             self._log(f"\n✓ 全部完成！成功 {counters['ok']}，跳过 {counters['skipped']}，失败 {counters['failed']}（共 {total}）")
             self._set_status(f"完成：成功 {counters['ok']} / 共 {total}")
-            self.after(0, lambda: self.progress.set(1.0))
+            self.after(0, lambda: (self.progress.set(1.0), self.pct_var.set("100%")))
         self._set_btn(True)
+
+    def _do_douyin_single(self, url, out_dir, quality_label, cookie_file):
+        """抖音单视频：真实浏览器取直连地址 + 直连 CDN 下载。成功返回 True。
+
+        取址失败返回 False（由调用方决定是否回退 yt-dlp）；
+        用户中途停止则抛 DownloadCancelled。
+        """
+        try:
+            import playwright  # noqa: F401
+        except ImportError:
+            self._log("[错误] 抖音单视频下载需要 Playwright，请在命令行运行：")
+            self._log("  pip install playwright && playwright install chromium")
+            return False
+
+        os.makedirs(out_dir, exist_ok=True)
+        self._log("启动浏览器获取直连地址（请勿关闭弹出的浏览器；如出现验证码请手动滑动）...")
+        self._set_status("获取地址中...")
+        try:
+            info = asyncio.run(
+                _playwright_fetch_single_douyin(url, cookie_file, self._log, self._stop_event)
+            )
+        except Exception as e:
+            self._log(f"[!] 浏览器取址出错：{str(e)[:80]}")
+            return False
+
+        if self._stop_event.is_set():
+            raise DownloadCancelled()
+        if not info or not info.get("formats"):
+            self._log("[!] 未能从页面获取到视频地址（可能验证码未完成、Cookie 失效或该视频受限）")
+            return False
+
+        fmt = _pick_douyin_format(info["formats"], quality_label)
+        if not fmt:
+            self._log("[!] 没有匹配的清晰度档位")
+            return False
+
+        preset = QUALITIES[quality_label]
+        is_audio = bool(preset.get("postprocessors"))
+        h = fmt["height"] or "src"
+        safe_title = _sanitize_filename(info["title"])[:100]
+        base = os.path.join(out_dir, safe_title)
+        self._log(f"✓ 已获取地址：{info['title'][:46]}（{len(info['formats'])} 档画质，选用 {h}p）")
+        self._set_status("下载中...")
+        if is_audio:
+            self._download_douyin_audio(fmt["url"], base, h)
+        else:
+            self._download_douyin_video(fmt["url"], base, h)
+        self._log("✓ 下载完成！")
+        self._set_status("下载完成 ✓")
+        self.after(0, lambda: (self.progress.set(1.0), self.pct_var.set("100%")))
+        return True
 
     def _download_douyin_video(self, cdn_url, base_path, height):
         """直连 CDN 下载抖音 mp4。"""

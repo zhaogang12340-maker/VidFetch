@@ -1,4 +1,6 @@
 yt-dlp>=2025.1.1
+yt-dlp-ejs>=0.8.0          # YouTube JS 挑战求解器脚本（配合 Deno，解算 n/签名）
 playwright>=1.40.0
 # 打包用（可选）：
 # pyinstaller>=6.0
+# 运行 YouTube 还需系统装有 Deno（https://deno.com）；发布版 exe 已自带 deno.exe
