@@ -7,8 +7,9 @@
 把下面这些放进同一目录（例如 `D:\VidFetch\`）：
 
 ```
-VidFetch_v1.06.exe         ← 主程序
+VidFetch_v1.08.exe         ← 主程序（宿主会自动识别 VidFetch*.exe，无需在意具体版本号）
 ffmpeg\                    ← 主程序自带的 ffmpeg 文件夹
+deno.exe                   ← YouTube 下载所需（完整版自带；只下 B站/抖音可不要）
 vidfetch_host.exe          ← Native Messaging 宿主（本扩展用）
 install_extension.bat      ← 一键注册脚本
 uninstall_extension.bat    ← 注销脚本

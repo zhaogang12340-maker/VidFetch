@@ -108,6 +108,7 @@ def build_opts(output_dir: str, site: str, quality: str = "best",
         "ignoreerrors": True,
         "http_headers": headers,
         "color": "never",
+        "socket_timeout": 60,   # 网络抖动时多给点握手/读超时余量，配合 retries 重试
     }
 
     if preset.get("merge_output_format"):
@@ -133,6 +134,12 @@ def build_opts(output_dir: str, site: str, quality: str = "best",
         opts.setdefault("extractor_args", {})["bilibili"] = {
             "prefer_multi_flv": ["false"],
         }
+
+    # 国内站点(B站/抖音)强制直连：避免系统/环境代理(如 Clash 全局把流量绕到海外
+    # 节点)导致的 SSL 握手失败 / 读超时(典型报错 _ssl.c handshake、Read timed out)。
+    # 这两家国内直连最快最稳；YouTube 等海外站不在此列，继续沿用环境代理。
+    if site in ("bilibili", "douyin"):
+        opts["proxy"] = ""
 
     return opts
 

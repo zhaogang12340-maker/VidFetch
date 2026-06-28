@@ -518,12 +518,38 @@ async def _playwright_collect_user_videos(user_url: str, cookie_file: str, log_f
                     pass
 
         page.on("response", on_response)
+
+        # 先访问首页"养"一下 cookie/ttwid，降低被风控拦截的概率（与单视频下载一致）
+        log_fn("正在打开抖音首页（养 Cookie，降低验证码概率）...")
+        try:
+            await page.goto("https://www.douyin.com/", wait_until="domcontentloaded", timeout=20000)
+        except Exception:
+            pass
+        await asyncio.sleep(3)
+
         log_fn(f"正在打开博主主页: {page_url}")
         try:
             await page.goto(page_url, wait_until="domcontentloaded", timeout=20000)
         except Exception:
             pass
-        await asyncio.sleep(6)
+
+        # 博主页可能弹"验证码中间页"，此时 aweme/post 接口不会触发，必须手动滑动验证。
+        # 标题含"验证码"时循环等待（最多 90 秒），用户滑过后标题变化即继续；
+        # 无验证码时第一轮即跳出，并保持原有的固定等待节奏（sleep 6），不影响既有流程。
+        warned = False
+        for _ in range(90):
+            try:
+                title = await page.title()
+            except Exception:
+                title = ""
+            if "验证码" in title:
+                if not warned:
+                    log_fn("⚠ 抖音弹出验证码，请在弹出的浏览器里手动滑动完成验证（完成后自动继续收集）")
+                    warned = True
+                await asyncio.sleep(1)
+                continue
+            break
+        await asyncio.sleep(2 if warned else 6)
 
         # 读取"作品 N"里的目标数量，用于判断是否收齐
         expected = 0

@@ -5,41 +5,74 @@
 真实有效平台:**Bilibili · 抖音 · YouTube**。
 > 腾讯视频 / 爱奇艺 / 央视频多为 DRM 加密或强反爬,实测无法下载,故不再列为支持平台。
 
-### 两个发布版本
+### 发布包(单一全能包)
 
-| 版本 | 适用网站 | 体积 | 说明 |
-|---|---|---|---|
-| **完整版**(带 deno) | Bilibili · 抖音 · **YouTube** | 较大 | 自带 `deno.exe`,YouTube 开箱即用 |
-| **精简版**(lite,不带 deno) | Bilibili · 抖音 | 较小 | 不含 deno;首次下 YouTube 会弹窗自动下载 deno(约 40 MB) |
+自 v1.08 起合并为**一个全能包** `VidFetch_v1.08_full_win64.zip`,解压即用,包含:
 
-> YouTube 必须有 deno 运行时来解析 JS 签名,完整版已内置。右上角「适用网站」会按当前版本自动显示。
+| 组成 | 作用 |
+|---|---|
+| `VidFetch_v1.08.exe` | 主程序(B站 / 抖音 / YouTube 下载) |
+| `deno.exe` | YouTube JS 签名解算运行时(YouTube 必需,已内置) |
+| `ffmpeg/` | 音视频合并 / 转码 |
+| `vidfetch_host.exe` + `browser_extension/` + `install_extension.*` | Chrome / Edge 右键下载扩展全套 |
+| `README.md` + `README_extension.md` | 主说明 + 扩展安装说明 |
+
+> 早期 v1.08 曾拆成「完整版 / 精简版(lite) / 扩展版」三个包,现已合并为这**一个全能包**,避免「装了主程序却少了扩展 / 少了 deno」之类的缺漏。
 
 ---
 
-## 一、功能列表
+## 一、功能清单(按引入版本 + 验证状态)
 
-| 功能 | 说明 | 已验证 |
+> 图例:✅ 已实测验证 · ⏳ 待核验(机制已具备,需手动操作或特定样本确认) · 加粗为本轮(v1.08)新开发
+
+### 老功能(v1.07 及更早就有)
+
+| 功能 | 平台 | 验证状态 | 说明 |
+|---|---|---|---|
+| 单视频下载 | B站 | ✅ | 登录 Cookie 后可达 4K(未登录限 480p) |
+| 单视频下载 | 抖音 | ✅ | Playwright 拦截直链,实测下到可播 mp4(需手动过验证码) |
+| 多P 分集勾选 | B站 | ⏳ | pagelist 取分集机制已通过;需多P视频触发勾选窗确认 |
+| UP主空间批量勾选 | B站 | ✅ | `space.bilibili.com`,弹窗默认全选可点选(实测取到列表) |
+| 番剧 / 合集批量勾选 | B站 | ✅ | `bangumi/media/mdXXXX` 等(实测取到列表) |
+| 博主全部作品批量 | 抖音 | ✅ | 博主主页收集 + 勾选,实测收齐 30/30(v1.08 修了验证码窗口) |
+| 收藏夹下载 | 抖音 | ⏳ | 目前为命令行脚本,尚未接入 GUI 勾选 |
+| 6 档清晰度 | 全平台 | ✅ | 最高 / 4K / 1080p / 720p / 360p / 纯音频 MP3 |
+| 文件名带实际分辨率 | 全平台 | ✅ | 如 `标题_1080p.mp4` |
+| 并发 1~5 | 全平台 | ✅ | 批量加速 |
+| 各清晰度独立去重跳过 | 全平台 | ✅ | `downloaded_archive_<档位>.txt`,不同清晰度互不误跳 |
+| Cookie 文件登录态 | 全平台 | ✅ | 会员 / 高清 / 需登录内容(实测 B站 4K) |
+| 从浏览器自动取 Cookie | 全平台 | ⏳ | 浏览器运行时会锁 Cookie 库;Cookie 文件方式已验证可用 |
+| 自动安装 ffmpeg | 全平台 | ✅ | 缺失时弹窗自动下载 |
+| 暂停 / 停止 | 全平台 | ✅ | 下载过程可中断并清理半成品 |
+| 免安装单文件 EXE | — | ✅ | 拷到任意 Windows 即用 |
+
+### v1.07 新增
+
+| 功能 | 验证状态 | 说明 |
 |---|---|---|
-| 单个视频下载 | 粘贴分享链接即可下载 | ✅ B站 / 抖音 / YouTube |
-| 多清晰度选择 | 最高画质 / 4K / 1080p / 720p / 360p / 纯音频 MP3 | ✅ |
-| 文件名带清晰度 | 自动以**实际下载到的分辨率**命名,如 `标题_1080p.mp4` | ✅ |
-| 整季 / 合集下载 | B站番剧 `bangumi/media/mdXXXX`、UP主空间自动识别并批量 | ✅ B站 |
-| YouTube 频道 / 播放列表批量 | 粘贴频道主页(`@handle`)或播放列表,**弹窗勾选**要下的视频(默认全选) | ✅ YouTube |
-| 博主全部作品 | 抖音博主主页一键下载全部作品(绕过抖音反爬) | ✅ 抖音 |
-| 批量勾选下载 | B站多P/番剧/UP主、YouTube 频道/列表,下载前弹窗逐个勾选 | ✅ |
-| 并发下载 | 批量时可设置同时下载 1~5 个,加速 | ✅ |
-| 断点续传式跳过 | 已下载的自动跳过(不同清晰度互不影响) | ✅ |
-| 登录态下载 | 通过 Cookie 文件下载会员 / 高清 / 需登录内容 | ✅ |
-| 自动安装 ffmpeg / Deno | 首次运行若缺 ffmpeg(合并音视频)或 Deno(解析 YouTube)会自动下载 | ✅ |
-| 免安装 EXE | 单文件可执行,拷到任意 Windows 电脑即用 | ✅ |
-| 现代化界面 | 基于 customtkinter 的圆角浅色界面(暖米色主题) | ✅ |
-| 浏览器右键下载 | Chrome / Edge 扩展,视频页右键「用 VidFetch 下载」自动下载 | ✅ |
+| Chrome / Edge 右键下载扩展 | ✅ 后端 / ⏳ 浏览器内 | host 联动拉起下载 + Chrome/Edge 双注册已实测;浏览器里加载扩展后右键实操待手动确认 |
+| B站 PCDN 规避(backupUrl 替换) | ⏳ | 修复被企业防火墙拦的分集;需对应网络场景复现 |
+
+### v1.08 新增 🆕
+
+| 功能 | 验证状态 | 说明 |
+|---|---|---|
+| YouTube 单视频下载 | ✅ | Deno + yt-dlp-ejs 解算 JS「n 挑战」签名,实测取到 4K |
+| YouTube 频道批量勾选 | ✅ | `@handle/videos`,弹窗默认全选(实测取到列表) |
+| YouTube 播放列表批量勾选 | ✅ | `playlist?list=`,弹窗勾选(实测取到列表) |
+| YouTube `watch?v=…&list=` 按单条 | ✅ | 带列表参数仍只下当前视频 |
+| Deno 自动检测 / 安装 | ✅ | 已内置;缺失时可自动下载 |
+| 各档优先非 AV1 编码 | ✅ | 规避 YouTube AV1 高码流的 403 / 0 字节 |
+| 现代化界面(customtkinter) | ✅ | 圆角浅色暖米色主题 |
+| **国内站强制直连** | ✅ | B站 / 抖音 不走代理,避免 Clash 全局把流量绕到海外节点导致 SSL 握手失败 / 读超时 |
+| **抖音博主批量「验证码窗口」** | ✅ | 进博主页前先养 Cookie,遇验证码留手动滑动窗口,实测收齐 30/30(此前无窗口会收集 0) |
+| **合并为单一全能包** | ✅ | 主程序 + deno + ffmpeg + 浏览器扩展合一,不再拆分多个 zip |
 
 ### 清晰度档位
 
 | 选项 | 用途 |
 |---|---|
-| 最高画质 | 欣赏用,选平台能提供的最高质量 |
+| 最高画质 | 选平台能提供的最高稳定质量 |
 | 4K（2160p） | 限制 ≤4K,无 4K 时自动降级 |
 | 1080p / 720p / 360p | 限制对应分辨率上限,平台无此档时自动取最接近的 |
 | 纯音频 MP3 | 只要声音,体积最小,适合语音转文字 |
@@ -117,7 +150,7 @@ python douyin_user_playwright.py --url "https://www.douyin.com/user/XXXX" \
 
 ### 第 1 步：下载并打开 VidFetch
 
-1. 到本仓库的 **[Releases](../../releases)** 页面，下载最新版（要下 YouTube 选**完整版**，只下 B站/抖音可选体积更小的 **lite 精简版**），解压到任意文件夹（如 `D:\VidFetch\`）
+1. 到本仓库的 **[Releases](../../releases)** 页面，下载 `VidFetch_v1.08_full_win64.zip`（单一全能包，含主程序 + deno + ffmpeg + 浏览器扩展），解压到任意文件夹（如 `D:\VidFetch\`）
 2. 双击 `VidFetch_v1.08.exe` **运行**（免安装，无需管理员权限）；同目录的 `deno.exe`、`ffmpeg/` 请一并保留
 3. 打开后是浅色现代化界面：视频链接、清晰度、保存目录、Cookie 文件、下载按钮；右上角会显示当前版本的「适用网站」
 
@@ -197,7 +230,7 @@ python douyin_user_playwright.py --url "https://www.douyin.com/user/XXXX" \
 
 YouTube 自 2025 年起对视频地址加了 **JS「n 挑战 / 签名」保护**，必须用 **Deno** 运行时实时解算才能拿到真实播放地址，否则只会下到缩略图（日志报 `Only images are available` / `Requested format is not available`）。
 
-- **完整版**已内置 `deno.exe`，开箱即用。**精简版**首次下 YouTube 会**弹窗自动下载 Deno**（约 40 MB，只装一次，存到 exe 同级 `deno/`）。
+- 全能包已内置 `deno.exe`，开箱即用。若 `deno.exe` 缺失，首次下 YouTube 会**弹窗自动下载 Deno**（约 40 MB，只装一次，存到 exe 同级 `deno/`）。
 - **频道 / 播放列表**：粘贴 `youtube.com/@博主/videos` 或 `youtube.com/playlist?list=...`，点下载后会**先弹出勾选窗口**（默认全选，可「全选 / 全不选 / 逐个取消」），点「开始下载」才真正下。列表抓取上限约 500 条（取最新）。
 - **画质与 4K**：各档位优先选 **非 AV1 编码（VP9/H264）**。因为 YouTube 的 **AV1 高码流常需 PO Token、易 403 或卡 0 字节**；选「最高画质」会拿到最高的稳定可下格式（多为 VP9 4K）。4K 大文件受 YouTube 限速，速度偏慢且有波动，属正常现象。
 - **会员 / 年龄限制 / 私享内容**：需要 Cookie（见第二~四步），否则只能下公开内容。
@@ -251,7 +284,7 @@ host.py                         扩展的 Native Messaging 宿主(打包成 vidf
 requirements.txt                Python 依赖
 ```
 
-> 发布包(zip)内除 `VidFetch_v1.08.exe` 外,完整版还附 `deno.exe`、`ffmpeg/`(精简版不含 deno)。
+> 发布包(zip)内除 `VidFetch_v1.08.exe` 外,还附 `deno.exe`、`ffmpeg/`,以及浏览器右键扩展全套(`vidfetch_host.exe`、`browser_extension/`、`install_extension.*`)。
 
 ---
 
@@ -264,17 +297,19 @@ pip install -r requirements.txt pyinstaller
 pyinstaller --noconfirm 视频下载器.spec
 ```
 
-`视频下载器.spec` 已配置 `collect_all('yt_dlp')` / `playwright` / `customtkinter` / `yt_dlp_ejs`,产物为 `dist/VidFetch_v1.08.exe`。打发布包时把 `deno.exe`(完整版)与 `ffmpeg/` 放到 exe 同目录再压缩即可。
+`视频下载器.spec` 已配置 `collect_all('yt_dlp')` / `playwright` / `customtkinter` / `yt_dlp_ejs`,产物为 `dist/VidFetch_v1.08.exe`。打全能包时把 `deno.exe`、`ffmpeg/`,以及扩展全套(`vidfetch_host.exe`、`browser_extension/`、`install_extension.*`、`uninstall_extension.bat`、`README_extension.md`)一并放到 exe 同目录再压缩即可。
 
 ---
 
 ## 版本历史
 
 ### v1.08(当前)
-- **新增 YouTube 支持**:用 Deno + yt-dlp-ejs 解算 JS 挑战;频道/播放列表弹窗勾选批量下载;各档优先非 AV1 编码规避 4K 403。Deno 缺失时自动下载。
-- **界面现代化**:改用 customtkinter,圆角控件 + 暖米色浅色主题;右上角「适用网站」按版本(完整版/精简版)自动显示。
-- **发布两个版本**:完整版(B站/抖音/YouTube,自带 deno)与精简版 lite(B站/抖音,体积更小)。
-- 移除无效平台标注(腾讯/爱奇艺/央视频,DRM 或强反爬实测下不了)。
+- **新增 YouTube 支持**:用 Deno + yt-dlp-ejs 解算 JS「n 挑战」签名;频道 / 播放列表弹窗勾选批量下载;各档优先非 AV1 编码规避 4K 403。Deno 缺失时自动下载。
+- **界面现代化**:改用 customtkinter,圆角控件 + 暖米色浅色主题。
+- **国内站强制直连**:B站 / 抖音 在 `build_opts` 强制 `proxy=''`,避免 Clash 全局把流量绕到海外节点导致 SSL 握手失败 / 读超时(YouTube 仍走代理)。
+- **抖音博主批量「验证码窗口」修复**:`_playwright_collect_user_videos` 进博主页前先访问首页养 Cookie,遇「验证码中间页」留手动滑动窗口(最多 90s),滑过后自动继续。此前缺这一步,博主页一弹验证码就收集 0;修复后实测收齐 30/30,无验证码路径节奏不变。
+- **合并为单一全能包**:不再拆「完整版 / lite / 扩展版」三个包,统一为 `VidFetch_v1.08_full_win64.zip`(主程序 + deno + ffmpeg + 浏览器扩展全套)。
+- 移除无效平台标注(腾讯 / 爱奇艺 / 央视频,DRM 或强反爬实测下不了)。
 
 ### v1.07
 - 新增 Chrome/Edge 浏览器右键下载扩展(Native Messaging);B站 PCDN 在提取层用 yt-dlp 自身 backupUrl 替换,修复被企业防火墙拦的分集。
